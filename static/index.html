@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acorn MCP - Mathematical Knowledge Base</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            background: #f5f5f5;
+            border: none;
+            font-size: 1.1em;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: #e8e8e8;
+        }
+
+        .tab.active {
+            background: white;
+            border-bottom: 3px solid #667eea;
+            font-weight: bold;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .item-list {
+            margin-top: 30px;
+        }
+
+        .item {
+            background: #f9f9f9;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .item:hover {
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transform: translateX(5px);
+        }
+
+        .item-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .item-content {
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .item-theorem-head {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+
+        .item-proof {
+            background: #d1ecf1;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .item-timestamp {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 10px;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌰 Acorn MCP</h1>
+            <p>Mathematical Knowledge Base - Theorems & Definitions</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('theorems')">Theorems</button>
+            <button class="tab" onclick="switchTab('definitions')">Definitions</button>
+        </div>
+
+        <div class="content">
+            <!-- Theorems Tab -->
+            <div id="theorems" class="tab-content active">
+                <h2>Add New Theorem</h2>
+                <div id="theorem-message" class="message"></div>
+                <form id="theorem-form">
+                    <div class="form-group">
+                        <label for="theorem-name">Theorem Name:</label>
+                        <input type="text" id="theorem-name" required placeholder="e.g., Pythagorean Theorem">
+                    </div>
+                    <div class="form-group">
+                        <label for="theorem-head">Theorem Statement:</label>
+                        <textarea id="theorem-head" required placeholder="e.g., In a right triangle, the square of the hypotenuse equals the sum of squares of the other two sides."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="theorem-proof">Proof:</label>
+                        <textarea id="theorem-proof" required placeholder="Enter the proof of the theorem..."></textarea>
+                    </div>
+                    <button type="submit">Add Theorem</button>
+                </form>
+
+                <div class="item-list">
+                    <h2>Existing Theorems</h2>
+                    <div id="theorems-list" class="loading">Loading theorems...</div>
+                </div>
+            </div>
+
+            <!-- Definitions Tab -->
+            <div id="definitions" class="tab-content">
+                <h2>Add New Definition</h2>
+                <div id="definition-message" class="message"></div>
+                <form id="definition-form">
+                    <div class="form-group">
+                        <label for="definition-name">Definition Name:</label>
+                        <input type="text" id="definition-name" required placeholder="e.g., Prime Number">
+                    </div>
+                    <div class="form-group">
+                        <label for="definition-text">Definition:</label>
+                        <textarea id="definition-text" required placeholder="e.g., A prime number is a natural number greater than 1 that has no positive divisors other than 1 and itself."></textarea>
+                    </div>
+                    <button type="submit">Add Definition</button>
+                </form>
+
+                <div class="item-list">
+                    <h2>Existing Definitions</h2>
+                    <div id="definitions-list" class="loading">Loading definitions...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+
+        // Show message
+        function showMessage(elementId, message, isError = false) {
+            const messageEl = document.getElementById(elementId);
+            messageEl.textContent = message;
+            messageEl.className = 'message show ' + (isError ? 'error' : 'success');
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 5000);
+        }
+
+        // Load theorems
+        async function loadTheorems() {
+            try {
+                const response = await fetch('/api/theorems');
+                const data = await response.json();
+                const listEl = document.getElementById('theorems-list');
+                
+                if (data.theorems.length === 0) {
+                    listEl.innerHTML = '<div class="empty-state">No theorems yet. Add your first theorem above!</div>';
+                } else {
+                    listEl.innerHTML = data.theorems.map(theorem => `
+                        <div class="item">
+                            <div class="item-name">${escapeHtml(theorem.name)}</div>
+                            <div class="item-theorem-head">
+                                <strong>Statement:</strong> ${escapeHtml(theorem.theorem_head)}
+                            </div>
+                            <div class="item-proof">
+                                <strong>Proof:</strong> ${escapeHtml(theorem.proof)}
+                            </div>
+                            <div class="item-timestamp">Added: ${new Date(theorem.created_at).toLocaleString()}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading theorems:', error);
+                document.getElementById('theorems-list').innerHTML = 
+                    '<div class="empty-state">Error loading theorems. Please try again.</div>';
+            }
+        }
+
+        // Load definitions
+        async function loadDefinitions() {
+            try {
+                const response = await fetch('/api/definitions');
+                const data = await response.json();
+                const listEl = document.getElementById('definitions-list');
+                
+                if (data.definitions.length === 0) {
+                    listEl.innerHTML = '<div class="empty-state">No definitions yet. Add your first definition above!</div>';
+                } else {
+                    listEl.innerHTML = data.definitions.map(definition => `
+                        <div class="item">
+                            <div class="item-name">${escapeHtml(definition.name)}</div>
+                            <div class="item-content">${escapeHtml(definition.definition)}</div>
+                            <div class="item-timestamp">Added: ${new Date(definition.created_at).toLocaleString()}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading definitions:', error);
+                document.getElementById('definitions-list').innerHTML = 
+                    '<div class="empty-state">Error loading definitions. Please try again.</div>';
+            }
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Handle theorem form submission
+        document.getElementById('theorem-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('theorem-name').value;
+            const theoremHead = document.getElementById('theorem-head').value;
+            const proof = document.getElementById('theorem-proof').value;
+            
+            try {
+                const response = await fetch('/api/theorems', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        theorem_head: theoremHead,
+                        proof: proof
+                    })
+                });
+                
+                if (response.ok) {
+                    showMessage('theorem-message', 'Theorem added successfully!');
+                    document.getElementById('theorem-form').reset();
+                    loadTheorems();
+                } else {
+                    const error = await response.json();
+                    showMessage('theorem-message', error.detail || 'Error adding theorem', true);
+                }
+            } catch (error) {
+                showMessage('theorem-message', 'Error adding theorem: ' + error.message, true);
+            }
+        });
+
+        // Handle definition form submission
+        document.getElementById('definition-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('definition-name').value;
+            const definition = document.getElementById('definition-text').value;
+            
+            try {
+                const response = await fetch('/api/definitions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        definition: definition
+                    })
+                });
+                
+                if (response.ok) {
+                    showMessage('definition-message', 'Definition added successfully!');
+                    document.getElementById('definition-form').reset();
+                    loadDefinitions();
+                } else {
+                    const error = await response.json();
+                    showMessage('definition-message', error.detail || 'Error adding definition', true);
+                }
+            } catch (error) {
+                showMessage('definition-message', 'Error adding definition: ' + error.message, true);
+            }
+        });
+
+        // Load data on page load
+        loadTheorems();
+        loadDefinitions();
+    </script>
+</body>
+</html>
