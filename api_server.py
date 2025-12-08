@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
+from contextlib import asynccontextmanager
 import os
 from database import (
     init_database,
@@ -15,7 +16,15 @@ from database import (
     get_all_definitions
 )
 
-app = FastAPI(title="Acorn MCP API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database on startup."""
+    await init_database()
+    yield
+
+
+app = FastAPI(title="Acorn MCP API", lifespan=lifespan)
 
 # Pydantic models for request validation
 class TheoremCreate(BaseModel):
@@ -27,12 +36,6 @@ class TheoremCreate(BaseModel):
 class DefinitionCreate(BaseModel):
     name: str
     definition: str
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
-    await init_database()
 
 
 @app.get("/")
