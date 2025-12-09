@@ -67,6 +67,50 @@ python -m scripts.import_acornlib
 ```
 Add `--dry-run` to see counts without writing.
 
+### End-to-end setup (detailed)
+
+1) Install dependencies (optionally in a virtualenv):
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2) (Optional) Pre-populate the DB from the bundled `acornlib` checkout:
+```bash
+python -m scripts.import_acornlib --dry-run   # inspect counts
+python -m scripts.import_acornlib             # write to acorn_mcp.db
+```
+
+3) Start the web/API server (serves the UI at `/` and JSON at `/api/*`):
+```bash
+python -m acorn_mcp.api_server
+```
+Visit `http://localhost:8000` to add/list theorems and definitions.
+
+4) Start the MCP server (stdio) in another terminal if you want MCP integration:
+```bash
+python -m acorn_mcp.mcp_server
+```
+The MCP server exposes the tool list below for clients.
+
+### Running the MCP Server
+
+The MCP server allows LLMs to interact with the theorem and definition databases:
+```bash
+python -m acorn_mcp.mcp_server
+```
+
+The MCP server communicates via stdio and can be integrated with LLM clients that support the Model Context Protocol.
+
+### Importing the Acorn standard library into the database
+
+Parse all `.ac` files in `acornlib/src` and insert the discovered theorems/definitions:
+```bash
+python -m scripts.import_acornlib
+```
+Add `--dry-run` to see counts without writing.
+
 ### Available MCP Tools
 
 The MCP server provides the following tools for LLMs:
@@ -79,6 +123,10 @@ The MCP server provides the following tools for LLMs:
 - `list_definitions`: List all definitions
 - `get_acorn_syntax`: Return the condensed Acorn syntax reference
 - `check_acorn_syntax`: Validate a snippet of Acorn code and report issues
+
+### Importer coverage
+
+The `scripts/import_acornlib.py` parser currently imports Acorn `theorem` blocks (with optional `by` proof) and `define` blocks as definitions. It does **not yet** import `inductive`, `structure`, `typeclass`, or `axiom` declarations; extend the script if you want those stored in the DB.
 
 ### API Endpoints
 
