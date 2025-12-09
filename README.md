@@ -115,7 +115,7 @@ Add `--dry-run` to see counts without writing.
 
 The MCP server provides the following tools for LLMs:
 
-- `add_theorem`: Add a new theorem (requires: name, theorem_head, proof)
+- `add_theorem`: Add a new theorem (requires: name, theorem_head, proof, raw)
 - `get_theorem`: Retrieve a theorem by name
 - `list_theorems`: List all theorems
 - `add_definition`: Add a new definition (requires: name, definition)
@@ -135,12 +135,12 @@ The `scripts/import_acornlib.py` parser imports:
 The FastAPI server provides the following endpoints:
 
 **Theorems:**
-- `GET /api/theorems`: List all theorems
+- `GET /api/theorems`: List all theorems (pagination via `page`/`page_size`, filter with `q`)
 - `GET /api/theorems/{name}`: Get a specific theorem
 - `POST /api/theorems`: Create a new theorem
 
 **Definitions:**
-- `GET /api/definitions`: List all definitions
+- `GET /api/definitions`: List all definitions (pagination via `page`/`page_size`, filter with `q`)
 - `GET /api/definitions/{name}`: Get a specific definition
 - `POST /api/definitions`: Create a new definition
 

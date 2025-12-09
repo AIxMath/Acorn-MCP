@@ -26,6 +26,16 @@ def _run_in_executor(fn):
     return loop.run_in_executor(DB_EXECUTOR, fn)
 
 
+def _ensure_raw_column(conn: sqlite3.Connection) -> None:
+    """Add raw column to theorems table if it is missing."""
+    cursor = conn.execute("PRAGMA table_info(theorems)")
+    columns = {row["name"] for row in cursor.fetchall()}
+    if "raw" not in columns:
+        conn.execute("ALTER TABLE theorems ADD COLUMN raw TEXT")
+        conn.execute("UPDATE theorems SET raw = theorem_head WHERE raw IS NULL")
+        conn.commit()
+
+
 async def init_database():
     """Initialize the database with theorem and definition tables."""
     def _init():
@@ -38,6 +48,7 @@ async def init_database():
                     name TEXT NOT NULL UNIQUE,
                     theorem_head TEXT NOT NULL,
                     proof TEXT NOT NULL,
+                    raw TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -52,6 +63,7 @@ async def init_database():
                 )
                 """
             )
+            _ensure_raw_column(conn)
             conn.commit()
         finally:
             conn.close()
@@ -59,21 +71,22 @@ async def init_database():
     await _run_in_executor(_init)
 
 
-async def add_theorem(name: str, theorem_head: str, proof: str) -> Dict:
+async def add_theorem(name: str, theorem_head: str, proof: str, raw: str) -> Dict:
     """Add a new theorem to the database."""
     def _insert():
         conn = _connect()
         try:
             cursor = conn.execute(
-                "INSERT INTO theorems (name, theorem_head, proof) VALUES (?, ?, ?)",
-                (name, theorem_head, proof)
+                "INSERT INTO theorems (name, theorem_head, proof, raw) VALUES (?, ?, ?, ?)",
+                (name, theorem_head, proof, raw)
             )
             conn.commit()
             return {
                 "id": cursor.lastrowid,
                 "name": name,
                 "theorem_head": theorem_head,
-                "proof": proof
+                "proof": proof,
+                "raw": raw
             }
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Theorem with name '{name}' already exists") from exc
@@ -97,12 +110,26 @@ async def get_theorem(name: str) -> Optional[Dict]:
     return await _run_in_executor(_get)
 
 
-async def get_theorem_count() -> int:
-    """Return total number of theorems."""
+def _build_search_clause(query: Optional[str], fields: List[str]) -> tuple[str, list]:
+    """Build SQL WHERE clause and params for LIKE search."""
+    if not query:
+        return "", []
+    term = f"%{query.strip()}%"
+    clause = " WHERE " + " OR ".join(f"{field} LIKE ?" for field in fields)
+    params = [term] * len(fields)
+    return clause, params
+
+
+async def get_theorem_count(query: Optional[str] = None) -> int:
+    """Return total number of theorems (optionally filtered)."""
     def _count():
         conn = _connect()
         try:
-            cursor = conn.execute("SELECT COUNT(*) FROM theorems")
+            clause, params = _build_search_clause(
+                query,
+                ["name", "theorem_head", "proof", "raw"]
+            )
+            cursor = conn.execute(f"SELECT COUNT(*) FROM theorems{clause}", params)
             (count,) = cursor.fetchone()
             return count
         finally:
@@ -111,7 +138,7 @@ async def get_theorem_count() -> int:
     return await _run_in_executor(_count)
 
 
-async def get_theorems(limit: int, offset: int = 0) -> List[Dict]:
+async def get_theorems(limit: int, offset: int = 0, query: Optional[str] = None) -> List[Dict]:
     """Return a slice of theorems ordered by recency."""
     if limit < 1:
         raise ValueError("Limit must be at least 1")
@@ -121,9 +148,13 @@ async def get_theorems(limit: int, offset: int = 0) -> List[Dict]:
     def _list():
         conn = _connect()
         try:
+            clause, params = _build_search_clause(
+                query,
+                ["name", "theorem_head", "proof", "raw"]
+            )
             cursor = conn.execute(
-                "SELECT * FROM theorems ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+                f"SELECT * FROM theorems{clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset)
             )
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
@@ -184,12 +215,13 @@ async def get_definition(name: str) -> Optional[Dict]:
     return await _run_in_executor(_get)
 
 
-async def get_definition_count() -> int:
+async def get_definition_count(query: Optional[str] = None) -> int:
     """Return total number of definitions."""
     def _count():
         conn = _connect()
         try:
-            cursor = conn.execute("SELECT COUNT(*) FROM definitions")
+            clause, params = _build_search_clause(query, ["name", "definition"])
+            cursor = conn.execute(f"SELECT COUNT(*) FROM definitions{clause}", params)
             (count,) = cursor.fetchone()
             return count
         finally:
@@ -198,7 +230,7 @@ async def get_definition_count() -> int:
     return await _run_in_executor(_count)
 
 
-async def get_definitions(limit: int, offset: int = 0) -> List[Dict]:
+async def get_definitions(limit: int, offset: int = 0, query: Optional[str] = None) -> List[Dict]:
     """Return a slice of definitions ordered by recency."""
     if limit < 1:
         raise ValueError("Limit must be at least 1")
@@ -208,9 +240,10 @@ async def get_definitions(limit: int, offset: int = 0) -> List[Dict]:
     def _list():
         conn = _connect()
         try:
+            clause, params = _build_search_clause(query, ["name", "definition"])
             cursor = conn.execute(
-                "SELECT * FROM definitions ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset)
+                f"SELECT * FROM definitions{clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset)
             )
             rows = cursor.fetchall()
             return [dict(row) for row in rows]

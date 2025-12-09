@@ -40,9 +40,13 @@ async def list_tools() -> list[Tool]:
                     "proof": {
                         "type": "string",
                         "description": "Proof of the theorem"
+                    },
+                    "raw": {
+                        "type": "string",
+                        "description": "Raw theorem text with free variables"
                     }
                 },
-                "required": ["name", "theorem_head", "proof"]
+                "required": ["name", "theorem_head", "proof", "raw"]
             }
         ),
         Tool(
@@ -140,7 +144,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await add_theorem(
                 arguments["name"],
                 arguments["theorem_head"],
-                arguments["proof"]
+                arguments["proof"],
+                arguments["raw"]
             )
             return [TextContent(
                 type="text",

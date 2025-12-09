@@ -29,7 +29,8 @@ async def test_database():
         await add_theorem(
             "Pythagorean Theorem",
             "In a right triangle, the square of the hypotenuse equals the sum of squares of the other two sides.",
-            "Let a and b be the legs and c be the hypotenuse of a right triangle. By the geometric interpretation, we can arrange four copies of the triangle around a square with side length c. The outer square has area (a+b)² and consists of the four triangles (total area 2ab) plus the inner square (area c²). Thus (a+b)² = 4(ab/2) + c², which simplifies to a² + 2ab + b² = 2ab + c², giving a² + b² = c²."
+            "Let a and b be the legs and c be the hypotenuse of a right triangle. By the geometric interpretation, we can arrange four copies of the triangle around a square with side length c. The outer square has area (a+b)² and consists of the four triangles (total area 2ab) plus the inner square (area c²). Thus (a+b)² = 4(ab/2) + c², which simplifies to a² + 2ab + b² = 2ab + c², giving a² + b² = c².",
+            "theorem pythagoras(a: Real, b: Real, c: Real) { a^2 + b^2 = c^2 }"
         )
         print("✓ Added Pythagorean Theorem")
     except ValueError as e:
@@ -39,7 +40,8 @@ async def test_database():
         await add_theorem(
             "Fundamental Theorem of Arithmetic",
             "Every integer greater than 1 can be represented uniquely as a product of prime numbers, up to the order of the factors.",
-            "The proof proceeds in two parts: existence and uniqueness. Existence follows by strong induction on n. Base case: n=2 is prime. Inductive step: if n is prime, we're done; otherwise n=ab where 1<a,b<n, and by the inductive hypothesis both a and b are products of primes, thus so is n. Uniqueness is proven by contradiction using the fact that if a prime p divides a product ab, then p divides a or p divides b."
+            "The proof proceeds in two parts: existence and uniqueness. Existence follows by strong induction on n. Base case: n=2 is prime. Inductive step: if n is prime, we're done; otherwise n=ab where 1<a,b<n, and by the inductive hypothesis both a and b are products of primes, thus so is n. Uniqueness is proven by contradiction using the fact that if a prime p divides a product ab, then p divides a or p divides b.",
+            "theorem fundamental_factorization(n: Int) { n > 1 implies exists factorization into primes }"
         )
         print("✓ Added Fundamental Theorem of Arithmetic")
     except ValueError as e:
@@ -76,12 +78,16 @@ async def test_database():
     if theorem_total:
         first_page = await get_theorems(limit=1, offset=0)
         print(f"✓ First theorem via pagination: {first_page[0]['name']}")
+        filtered = await get_theorems(limit=10, offset=0, query="prime")
+        print(f"✓ Filtered theorem search returned {len(filtered)} rows (query='prime')")
     else:
         print("ℹ No theorems available to paginate")
 
     if definition_total:
         first_definition_page = await get_definitions(limit=1, offset=0)
         print(f"✓ First definition via pagination: {first_definition_page[0]['name']}")
+        filtered_defs = await get_definitions(limit=10, offset=0, query="group")
+        print(f"✓ Filtered definition search returned {len(filtered_defs)} rows (query='group')")
     else:
         print("ℹ No definitions available to paginate")
     print("\nTest completed successfully!")

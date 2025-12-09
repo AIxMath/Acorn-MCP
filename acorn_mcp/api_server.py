@@ -38,6 +38,7 @@ class TheoremCreate(BaseModel):
     name: str
     theorem_head: str
     proof: str
+    raw: str
 
 
 class DefinitionCreate(BaseModel):
@@ -56,20 +57,22 @@ async def read_root():
 @app.get("/api/theorems")
 async def list_theorems(
     page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=1, le=MAX_PAGE_SIZE)
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
+    q: str | None = Query(None, description="Optional search query")
 ):
     """Get paginated theorems."""
-    total = await get_theorem_count()
+    total = await get_theorem_count(query=q)
     total_pages = max(1, ceil(total / page_size)) if total else 1
     safe_page = min(page, total_pages)
     offset = (safe_page - 1) * page_size
-    theorems = await get_theorems(limit=page_size, offset=offset)
+    theorems = await get_theorems(limit=page_size, offset=offset, query=q)
     return {
         "theorems": theorems,
         "total": total,
         "page": safe_page,
         "page_size": page_size,
-        "pages": total_pages
+        "pages": total_pages,
+        "query": q
     }
 
 
@@ -89,7 +92,8 @@ async def create_theorem(theorem: TheoremCreate):
         result = await add_theorem(
             theorem.name,
             theorem.theorem_head,
-            theorem.proof
+            theorem.proof,
+            theorem.raw
         )
         return result
     except ValueError as e:
@@ -99,20 +103,22 @@ async def create_theorem(theorem: TheoremCreate):
 @app.get("/api/definitions")
 async def list_definitions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=1, le=MAX_PAGE_SIZE)
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
+    q: str | None = Query(None, description="Optional search query")
 ):
     """Get paginated definitions."""
-    total = await get_definition_count()
+    total = await get_definition_count(query=q)
     total_pages = max(1, ceil(total / page_size)) if total else 1
     safe_page = min(page, total_pages)
     offset = (safe_page - 1) * page_size
-    definitions = await get_definitions(limit=page_size, offset=offset)
+    definitions = await get_definitions(limit=page_size, offset=offset, query=q)
     return {
         "definitions": definitions,
         "total": total,
         "page": safe_page,
         "page_size": page_size,
-        "pages": total_pages
+        "pages": total_pages,
+        "query": q
     }
 
 

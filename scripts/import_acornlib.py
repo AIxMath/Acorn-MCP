@@ -221,7 +221,7 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
 
     for thm in theorems:
         try:
-            await add_theorem(thm.name, thm.head, thm.proof)
+            await add_theorem(thm.name, thm.head, thm.proof, thm.head)
             thm_added += 1
         except ValueError:
             thm_skipped += 1
