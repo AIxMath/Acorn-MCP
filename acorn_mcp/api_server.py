@@ -1,12 +1,11 @@
 """FastAPI backend for Acorn MCP frontend."""
+from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional
-from contextlib import asynccontextmanager
-import os
-from database import (
+from acorn_mcp.database import (
     init_database,
     add_theorem,
     get_theorem,
@@ -15,6 +14,10 @@ from database import (
     get_definition,
     get_all_definitions
 )
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = ROOT_DIR / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
 
 
 @asynccontextmanager
@@ -41,7 +44,9 @@ class DefinitionCreate(BaseModel):
 @app.get("/")
 async def read_root():
     """Serve the main HTML page."""
-    return FileResponse("static/index.html")
+    if not INDEX_FILE.exists():
+        raise HTTPException(status_code=404, detail="Frontend assets not found")
+    return FileResponse(str(INDEX_FILE))
 
 
 @app.get("/api/theorems")
@@ -104,8 +109,8 @@ async def create_definition(definition: DefinitionCreate):
 
 
 # Mount static files
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 if __name__ == "__main__":

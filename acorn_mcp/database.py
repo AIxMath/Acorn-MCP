@@ -1,14 +1,15 @@
 """Database module for managing theorems and definitions."""
+from pathlib import Path
 import aiosqlite
-import os
 from typing import List, Dict, Optional
 
-DATABASE_PATH = "acorn_mcp.db"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DATABASE_PATH = ROOT_DIR / "acorn_mcp.db"
 
 
 async def init_database():
     """Initialize the database with theorem and definition tables."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         # Create theorems table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS theorems (
@@ -35,7 +36,7 @@ async def init_database():
 
 async def add_theorem(name: str, theorem_head: str, proof: str) -> Dict:
     """Add a new theorem to the database."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         try:
             cursor = await db.execute(
                 "INSERT INTO theorems (name, theorem_head, proof) VALUES (?, ?, ?)",
@@ -54,7 +55,7 @@ async def add_theorem(name: str, theorem_head: str, proof: str) -> Dict:
 
 async def get_theorem(name: str) -> Optional[Dict]:
     """Get a theorem by name."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT * FROM theorems WHERE name = ?",
@@ -68,7 +69,7 @@ async def get_theorem(name: str) -> Optional[Dict]:
 
 async def get_all_theorems() -> List[Dict]:
     """Get all theorems from the database."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM theorems ORDER BY created_at DESC")
         rows = await cursor.fetchall()
@@ -77,7 +78,7 @@ async def get_all_theorems() -> List[Dict]:
 
 async def add_definition(name: str, definition: str) -> Dict:
     """Add a new definition to the database."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         try:
             cursor = await db.execute(
                 "INSERT INTO definitions (name, definition) VALUES (?, ?)",
@@ -95,7 +96,7 @@ async def add_definition(name: str, definition: str) -> Dict:
 
 async def get_definition(name: str) -> Optional[Dict]:
     """Get a definition by name."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT * FROM definitions WHERE name = ?",
@@ -109,7 +110,7 @@ async def get_definition(name: str) -> Optional[Dict]:
 
 async def get_all_definitions() -> List[Dict]:
     """Get all definitions from the database."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    async with aiosqlite.connect(str(DATABASE_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM definitions ORDER BY created_at DESC")
         rows = await cursor.fetchall()

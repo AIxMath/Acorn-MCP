@@ -208,3 +208,9 @@ __marimo__/
 
 # Acorn MCP
 acorn_mcp.db
+
+# Acorn library build artifacts
+acornlib/build/
+
+# Local checkout of the Acorn standard library (keep local, not committed)
+/acornlib/

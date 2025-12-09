@@ -2,6 +2,13 @@
 
 A Model Context Protocol (MCP) server for managing mathematical theorems and definitions with an intuitive web interface.
 
+## Layout
+- `acorn_mcp/`: Python package for the MCP server, API server, database access, and syntax checker
+- `static/`: Frontend assets served by the API server
+- `docs/`: Acorn background and condensed syntax reference
+- `tests/`: Simple database smoke test
+- `acornlib/`: Checked-out Acorn standard library (not modified by this server)
+
 ## Features
 
 - **Theorem Database**: Store and manage theorems with name, statement, and proof
@@ -14,9 +21,9 @@ A Model Context Protocol (MCP) server for managing mathematical theorems and def
 
 The project consists of three main components:
 
-1. **Database Layer** (`database.py`): SQLite database with async operations for theorems and definitions
-2. **MCP Server** (`mcp_server.py`): Model Context Protocol server that LLMs can use to access the knowledge base
-3. **API Server** (`api_server.py`): FastAPI backend providing REST endpoints for the web interface
+1. **Database Layer** (`acorn_mcp/database.py`): SQLite database with async operations for theorems and definitions
+2. **MCP Server** (`acorn_mcp/mcp_server.py`): Model Context Protocol server that LLMs can use to access the knowledge base
+3. **API Server** (`acorn_mcp/api_server.py`): FastAPI backend providing REST endpoints for the web interface
 4. **Frontend** (`static/index.html`): Interactive web interface for viewing and managing content
 
 ## Installation
@@ -38,7 +45,7 @@ pip install -r requirements.txt
 
 Start the FastAPI server:
 ```bash
-python api_server.py
+python -m acorn_mcp.api_server
 ```
 
 Then open your browser to `http://localhost:8000` to access the web interface.
@@ -47,10 +54,18 @@ Then open your browser to `http://localhost:8000` to access the web interface.
 
 The MCP server allows LLMs to interact with the theorem and definition databases:
 ```bash
-python mcp_server.py
+python -m acorn_mcp.mcp_server
 ```
 
 The MCP server communicates via stdio and can be integrated with LLM clients that support the Model Context Protocol.
+
+### Importing the Acorn standard library into the database
+
+Parse all `.ac` files in `acornlib/src` and insert the discovered theorems/definitions:
+```bash
+python -m scripts.import_acornlib
+```
+Add `--dry-run` to see counts without writing.
 
 ### Available MCP Tools
 
@@ -62,6 +77,8 @@ The MCP server provides the following tools for LLMs:
 - `add_definition`: Add a new definition (requires: name, definition)
 - `get_definition`: Retrieve a definition by name
 - `list_definitions`: List all definitions
+- `get_acorn_syntax`: Return the condensed Acorn syntax reference
+- `check_acorn_syntax`: Validate a snippet of Acorn code and report issues
 
 ### API Endpoints
 

@@ -1,6 +1,13 @@
 """Test script to verify database operations."""
 import asyncio
-from database import (
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from acorn_mcp.database import (
     init_database,
     add_theorem,
     get_all_theorems,

@@ -1,10 +1,10 @@
 """MCP Server for theorem and definition management."""
 import asyncio
+import json
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
-import json
-from database import (
+from acorn_mcp.database import (
     init_database,
     add_theorem,
     get_theorem,
@@ -13,6 +13,7 @@ from database import (
     get_definition,
     get_all_definitions
 )
+from acorn_mcp.syntax_checker import load_syntax_reference, check_syntax
 
 # Create MCP server instance
 app = Server("acorn-mcp")
@@ -105,6 +106,28 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {}
             }
+        ),
+        Tool(
+            name="get_acorn_syntax",
+            description="Return the condensed Acorn syntax reference",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="check_acorn_syntax",
+            description="Check Acorn source text for common syntax issues",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Acorn code to validate"
+                    }
+                },
+                "required": ["source"]
+            }
         )
     ]
 
@@ -172,6 +195,21 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=json.dumps(result, indent=2)
+            )]
+        
+        elif name == "get_acorn_syntax":
+            reference = load_syntax_reference()
+            return [TextContent(
+                type="text",
+                text=reference
+            )]
+        
+        elif name == "check_acorn_syntax":
+            report = check_syntax(arguments["source"])
+            pretty = json.dumps(report, indent=2)
+            return [TextContent(
+                type="text",
+                text=pretty
             )]
         
         else:
