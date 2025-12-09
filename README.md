@@ -126,7 +126,9 @@ The MCP server provides the following tools for LLMs:
 
 ### Importer coverage
 
-The `scripts/import_acornlib.py` parser currently imports Acorn `theorem` blocks (with optional `by` proof) and `define` blocks as definitions. It does **not yet** import `inductive`, `structure`, `typeclass`, or `axiom` declarations; extend the script if you want those stored in the DB.
+The `scripts/import_acornlib.py` parser imports:
+- Theorems: `theorem` blocks (statement + optional `by` proof) and `axiom` blocks (treated as theorems with no proof).
+- Definitions: `define`, `inductive`, `structure`, and `typeclass` blocks (stored with their headers and bodies). Inductive types are treated as definitions.
 
 ### API Endpoints
 

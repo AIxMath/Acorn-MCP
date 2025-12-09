@@ -26,6 +26,7 @@ ACORNLIB_SRC = ROOT_DIR / "acornlib" / "src"
 
 @dataclass
 class ParsedTheorem:
+    kind: str  # "theorem" or "axiom"
     name: str
     head: str
     proof: str
@@ -35,8 +36,9 @@ class ParsedTheorem:
 
 @dataclass
 class ParsedDefinition:
+    kind: str  # "define", "inductive", "structure", "typeclass"
     name: str
-    body: str
+    body: str  # stored text (header + block)
     file: Path
     line: int
 
@@ -101,14 +103,15 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
         line = lines[i]
         stripped = line.lstrip()
 
-        # Theorem parsing
-        if stripped.startswith("theorem"):
+        # Theorem/Axiom parsing
+        if stripped.startswith("theorem") or stripped.startswith("axiom"):
             start_line_no = i + 1
             raw_name = None
-            m = re.match(r"theorem\s+([A-Za-z0-9_]+)", stripped)
+            kw = "axiom" if stripped.startswith("axiom") else "theorem"
+            m = re.match(rf"{kw}\s+([A-Za-z0-9_]+)", stripped)
             if m:
                 raw_name = m.group(1)
-            name = f"{module}.{raw_name}" if raw_name else f"{module}.anonymous_{start_line_no}"
+            name = f"{module}.{raw_name}" if raw_name else f"{module}.{kw}_{start_line_no}"
 
             brace_pos = line.find("{")
             if brace_pos == -1:
@@ -122,26 +125,28 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
             search_line = head_end_line
             search_col = head_end_col
             proof_found = False
-            while search_line < len(lines) and not proof_found:
-                remainder = lines[search_line][search_col:] if search_col < len(lines[search_line]) else ""
-                by_pos = _find_keyword(remainder, "by")
-                if by_pos is not None:
-                    brace_after_by = remainder.find("{", by_pos)
-                    if brace_after_by != -1:
-                        proof, proof_end_line, proof_end_col = _capture_block(
-                            lines, search_line, search_col + brace_after_by + 1
-                        )
-                        i = proof_end_line + 1
-                        proof_found = True
-                        break
-                search_line += 1
-                search_col = 0
+            if kw == "theorem":  # only theorems have proofs
+                while search_line < len(lines) and not proof_found:
+                    remainder = lines[search_line][search_col:] if search_col < len(lines[search_line]) else ""
+                    by_pos = _find_keyword(remainder, "by")
+                    if by_pos is not None:
+                        brace_after_by = remainder.find("{", by_pos)
+                        if brace_after_by != -1:
+                            proof, proof_end_line, proof_end_col = _capture_block(
+                                lines, search_line, search_col + brace_after_by + 1
+                            )
+                            i = proof_end_line + 1
+                            proof_found = True
+                            break
+                    search_line += 1
+                    search_col = 0
 
             if not proof_found:
                 i = head_end_line + 1
 
             theorems.append(
                 ParsedTheorem(
+                    kind=kw,
                     name=name,
                     head=head.strip(),
                     proof=proof.strip(),
@@ -151,15 +156,21 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
             )
             continue
 
-        # Definition parsing (Acorn "define" blocks)
-        if stripped.startswith("define"):
-            # Extract name right after 'define'
+        # Definition parsing (define, inductive, structure, typeclass)
+        def_kw = None
+        for candidate in ("define", "inductive", "structure", "typeclass"):
+            if stripped.startswith(candidate):
+                def_kw = candidate
+                break
+
+        if def_kw:
+            # Extract name right after the keyword
             start_line_no = i + 1
             raw_name = None
-            m = re.match(r"define\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+            m = re.match(rf"{def_kw}\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
             if m:
                 raw_name = m.group(1)
-            name = f"{module}.{raw_name}" if raw_name else f"{module}.define_{start_line_no}"
+            name = f"{module}.{raw_name}" if raw_name else f"{module}.{def_kw}_{start_line_no}"
 
             brace_pos = line.find("{")
             if brace_pos == -1:
@@ -167,10 +178,13 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                 continue
 
             body, def_end_line, def_end_col = _capture_block(lines, i, brace_pos + 1)
+            header = line[:brace_pos].strip()
+            rendered = f"{header} {{\n{body}\n}}"
             definitions.append(
                 ParsedDefinition(
+                    kind=def_kw,
                     name=name,
-                    body=body.strip(),
+                    body=rendered.strip(),
                     file=path,
                     line=start_line_no,
                 )
