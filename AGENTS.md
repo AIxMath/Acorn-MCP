@@ -7,6 +7,7 @@
 - `tests/`: Lightweight smoke checks (currently `tests/test_database.py`); expand here for new coverage.
 - `acornlib/`: Checked-out Acorn standard library; treat as vendored input, not code you edit.
 - Root files: `requirements.txt`, `LICENSE`, and the working database file `acorn_mcp.db`.
+- Pagination is available on theorems/definitions (`page`, `page_size` capped by `MAX_PAGE_SIZE` in `database.py`); UI relies on paginated feeds to avoid loading thousands of rows at once.
 
 ## Build, Test, and Development Commands
 - Set up deps (optionally in a venv): `pip install -r requirements.txt`.
@@ -20,6 +21,8 @@
 - Keep FastAPI endpoints and MCP tools asynchronous; prefer type hints for request/response shapes.
 - Add concise docstrings at module/function level; keep public tool descriptions aligned across API and MCP definitions.
 - Static assets: avoid bundlers; keep paths stable for `StaticFiles` mount and `index.html` references.
+- Database access uses the sqlite3 ThreadPool-backed helpers in `database.py`; honor `MAX_PAGE_SIZE` validation rather than bypassing helpers.
+- UI palette is monochrome (black/white); keep new sections consistent and preserve monospace rendering for formal text blocks.
 
 ## Testing Guidelines
 - Place new tests under `tests/` using `test_*.py` naming; keep them deterministic by starting from a clean `acorn_mcp.db` (delete or isolate the file before runs).

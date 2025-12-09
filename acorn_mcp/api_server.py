@@ -1,18 +1,22 @@
 """FastAPI backend for Acorn MCP frontend."""
 from contextlib import asynccontextmanager
+from math import ceil
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from acorn_mcp.database import (
+    MAX_PAGE_SIZE,
     init_database,
     add_theorem,
     get_theorem,
-    get_all_theorems,
+    get_theorem_count,
+    get_theorems,
     add_definition,
     get_definition,
-    get_all_definitions
+    get_definition_count,
+    get_definitions
 )
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -50,10 +54,23 @@ async def read_root():
 
 
 @app.get("/api/theorems")
-async def list_theorems():
-    """Get all theorems."""
-    theorems = await get_all_theorems()
-    return {"theorems": theorems}
+async def list_theorems(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=MAX_PAGE_SIZE)
+):
+    """Get paginated theorems."""
+    total = await get_theorem_count()
+    total_pages = max(1, ceil(total / page_size)) if total else 1
+    safe_page = min(page, total_pages)
+    offset = (safe_page - 1) * page_size
+    theorems = await get_theorems(limit=page_size, offset=offset)
+    return {
+        "theorems": theorems,
+        "total": total,
+        "page": safe_page,
+        "page_size": page_size,
+        "pages": total_pages
+    }
 
 
 @app.get("/api/theorems/{name}")
@@ -80,10 +97,23 @@ async def create_theorem(theorem: TheoremCreate):
 
 
 @app.get("/api/definitions")
-async def list_definitions():
-    """Get all definitions."""
-    definitions = await get_all_definitions()
-    return {"definitions": definitions}
+async def list_definitions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=MAX_PAGE_SIZE)
+):
+    """Get paginated definitions."""
+    total = await get_definition_count()
+    total_pages = max(1, ceil(total / page_size)) if total else 1
+    safe_page = min(page, total_pages)
+    offset = (safe_page - 1) * page_size
+    definitions = await get_definitions(limit=page_size, offset=offset)
+    return {
+        "definitions": definitions,
+        "total": total,
+        "page": safe_page,
+        "page_size": page_size,
+        "pages": total_pages
+    }
 
 
 @app.get("/api/definitions/{name}")

@@ -11,8 +11,12 @@ from acorn_mcp.database import (
     init_database,
     add_theorem,
     get_all_theorems,
+    get_theorem_count,
+    get_theorems,
     add_definition,
-    get_all_definitions
+    get_all_definitions,
+    get_definition_count,
+    get_definitions
 )
 
 async def test_database():
@@ -63,9 +67,23 @@ async def test_database():
     # Verify
     theorems = await get_all_theorems()
     definitions = await get_all_definitions()
+    theorem_total = await get_theorem_count()
+    definition_total = await get_definition_count()
     
-    print(f"\n✓ Total theorems: {len(theorems)}")
-    print(f"✓ Total definitions: {len(definitions)}")
+    print(f"\n✓ Total theorems: {len(theorems)} (count query reports {theorem_total})")
+    print(f"✓ Total definitions: {len(definitions)} (count query reports {definition_total})")
+
+    if theorem_total:
+        first_page = await get_theorems(limit=1, offset=0)
+        print(f"✓ First theorem via pagination: {first_page[0]['name']}")
+    else:
+        print("ℹ No theorems available to paginate")
+
+    if definition_total:
+        first_definition_page = await get_definitions(limit=1, offset=0)
+        print(f"✓ First definition via pagination: {first_definition_page[0]['name']}")
+    else:
+        print("ℹ No definitions available to paginate")
     print("\nTest completed successfully!")
 
 if __name__ == "__main__":
