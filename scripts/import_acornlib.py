@@ -18,6 +18,7 @@ from acorn_mcp.database import (
     init_database,
     add_theorem,
     add_definition,
+    add_dependency,
 )
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -37,11 +38,12 @@ class ParsedTheorem:
 
 @dataclass
 class ParsedDefinition:
-    kind: str  # "define", "inductive", "structure", "typeclass"
+    kind: str  # "define", "inductive", "structure", "typeclass", "attributes"
     name: str
     body: str  # stored text (header + block)
     file: Path
     line: int
+    target_type: Optional[str] = None  # For attributes blocks, the type they apply to
 
 
 def _char_iter(segment: str) -> Iterable[Tuple[int, str]]:
@@ -94,6 +96,18 @@ def _module_name(path: Path) -> str:
     return ".".join(rel.parts)
 
 
+def _extract_identifiers(text: str) -> set[str]:
+    """Extract potential identifiers from Acorn code text.
+
+    This is a simple heuristic approach - looks for capitalized words
+    that could be type names or module-qualified names.
+    """
+    # Match patterns like: TypeName, Module.name, Module.SubModule.name
+    pattern = r'\b[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\b'
+    matches = re.findall(pattern, text)
+    return set(matches)
+
+
 def _is_comment_or_blank(line: str) -> bool:
     stripped = line.strip()
     return stripped == "" or stripped.startswith("//")
@@ -139,7 +153,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                 continue
 
             kw_col = line.find(kw)
-            head_content, head_end_line, head_end_col = _capture_block(lines, i, brace_pos + 1)
+            _, head_end_line, head_end_col = _capture_block(lines, i, brace_pos + 1)
             # head_text should be from keyword through the closing } of the head block
             head_text = _slice_span(lines, i, kw_col, head_end_line, head_end_col).strip()
 
@@ -174,7 +188,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                         proof_result = _maybe_capture_proof(probe_line, 0)
 
             if proof_result:
-                proof_content, by_line, by_col, proof_end_line, proof_end_col = proof_result
+                proof_content, _, _, proof_end_line, proof_end_col = proof_result
                 proof = proof_content.strip()
                 raw_end_line = proof_end_line
                 raw_end_col = proof_end_col
@@ -196,9 +210,9 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
             )
             continue
 
-        # Definition parsing (define, inductive, structure, typeclass)
+        # Definition parsing (define, inductive, structure, typeclass, attributes)
         def_kw = None
-        for candidate in ("define", "inductive", "structure", "typeclass"):
+        for candidate in ("attributes", "define", "inductive", "structure", "typeclass"):
             if stripped.startswith(candidate):
                 def_kw = candidate
                 break
@@ -207,9 +221,20 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
             # Extract name right after the keyword
             start_line_no = i + 1
             raw_name = None
-            m = re.match(rf"{def_kw}\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
-            if m:
-                raw_name = m.group(1)
+            target_type = None  # For attributes blocks
+
+            if def_kw == "attributes":
+                # attributes blocks: "attributes TypeName {"
+                m = re.match(r"attributes\s+([A-Za-z_][A-Za-z0-9_<>\[\],\s]*?)\s*\{", stripped)
+                if m:
+                    target_type = m.group(1).strip()
+                    raw_name = f"{target_type}_attributes"
+            else:
+                # Other definition types: "keyword name(...) {"
+                m = re.match(rf"{def_kw}\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+                if m:
+                    raw_name = m.group(1)
+
             name = f"{module}.{raw_name}" if raw_name else f"{module}.{def_kw}_{start_line_no}"
 
             brace_pos = line.find("{")
@@ -217,19 +242,24 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                 i += 1
                 continue
 
-            body, def_end_line, def_end_col = _capture_block(lines, i, brace_pos + 1)
-            header = line[:brace_pos].strip()
-            rendered = f"{header} {{\n{body}\n}}"
-            definitions.append(
-                ParsedDefinition(
-                    kind=def_kw,
-                    name=name,
-                    body=rendered.strip(),
-                    file=path,
-                    line=start_line_no,
+            try:
+                body, def_end_line, _ = _capture_block(lines, i, brace_pos + 1)
+                header = line[:brace_pos].strip()
+                rendered = f"{header} {{\n{body}\n}}"
+                definitions.append(
+                    ParsedDefinition(
+                        kind=def_kw,
+                        name=name,
+                        body=rendered.strip(),
+                        file=path,
+                        line=start_line_no,
+                        target_type=target_type
+                    )
                 )
-            )
-            i = def_end_line + 1
+                i = def_end_line + 1
+            except ValueError as e:
+                print(f"[warn] Failed to parse {def_kw} at {path}:{start_line_no}: {e}", file=sys.stderr)
+                i += 1
             continue
 
         i += 1
@@ -252,35 +282,88 @@ def parse_acornlib() -> Tuple[List[ParsedTheorem], List[ParsedDefinition]]:
 async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDefinition], dry_run: bool) -> None:
     await init_database()
 
-    thm_added = thm_skipped = 0
-    def_added = def_skipped = 0
+    thm_added = thm_skipped = thm_failed = 0
+    def_added = def_skipped = def_failed = 0
+    dep_added = 0
 
     if dry_run:
         print(f"[dry-run] Parsed {len(theorems)} theorems, {len(definitions)} definitions.")
+        for thm in theorems[:5]:
+            print(f"  Theorem: {thm.name} ({thm.file}:{thm.line})")
+        for dfn in definitions[:5]:
+            print(f"  Definition: {dfn.name} ({dfn.file}:{dfn.line}) [kind={dfn.kind}]")
         return
 
+    # First pass: add all items
+    print("=== Importing theorems ===")
     for thm in theorems:
         try:
-            await add_theorem(thm.name, thm.head, thm.proof, thm.raw)
+            await add_theorem(
+                thm.name, thm.head, thm.proof, thm.raw,
+                file_path=str(thm.file.relative_to(ROOT_DIR)),
+                line_number=thm.line
+            )
             thm_added += 1
-        except ValueError:
+        except ValueError as e:
             thm_skipped += 1
-        except Exception as exc:  # pragma: no cover - defensive
-            thm_skipped += 1
-            print(f"[warn] Failed to add theorem {thm.name} ({thm.file}:{thm.line}): {exc}", file=sys.stderr)
+            if "already exists" not in str(e):
+                print(f"[skip] {thm.name}: {e}")
+        except Exception as exc:
+            thm_failed += 1
+            print(f"[ERROR] Failed to add theorem {thm.name} ({thm.file}:{thm.line}): {exc}", file=sys.stderr)
 
+    print(f"Theorems: added {thm_added}, skipped {thm_skipped}, failed {thm_failed}")
+
+    print("\n=== Importing definitions ===")
     for dfn in definitions:
         try:
-            await add_definition(dfn.name, dfn.body)
+            await add_definition(
+                dfn.name, dfn.body,
+                kind=dfn.kind,
+                file_path=str(dfn.file.relative_to(ROOT_DIR)),
+                line_number=dfn.line
+            )
             def_added += 1
-        except ValueError:
+        except ValueError as e:
             def_skipped += 1
-        except Exception as exc:  # pragma: no cover - defensive
-            def_skipped += 1
-            print(f"[warn] Failed to add definition {dfn.name} ({dfn.file}:{dfn.line}): {exc}", file=sys.stderr)
+            if "already exists" not in str(e):
+                print(f"[skip] {dfn.name}: {e}")
+        except Exception as exc:
+            def_failed += 1
+            print(f"[ERROR] Failed to add definition {dfn.name} ({dfn.file}:{dfn.line}) [kind={dfn.kind}]: {exc}", file=sys.stderr)
 
-    print(f"Theorems: added {thm_added}, skipped {thm_skipped}")
-    print(f"Definitions: added {def_added}, skipped {def_skipped}")
+    print(f"Definitions: added {def_added}, skipped {def_skipped}, failed {def_failed}")
+
+    # Second pass: extract and add dependencies
+    print("\n=== Extracting dependencies ===")
+    for thm in theorems:
+        # Extract identifiers from theorem head and proof
+        all_text = f"{thm.head}\n{thm.proof}"
+        identifiers = _extract_identifiers(all_text)
+        for ident in identifiers:
+            if ident and ident != thm.name:
+                try:
+                    await add_dependency(thm.name, "theorem", ident, "uses")
+                    dep_added += 1
+                except Exception:
+                    pass  # Silently skip dependency errors
+
+    for dfn in definitions:
+        # Extract identifiers from definition body
+        identifiers = _extract_identifiers(dfn.body)
+        for ident in identifiers:
+            if ident and ident != dfn.name:
+                try:
+                    await add_dependency(dfn.name, "definition", ident, "uses")
+                    dep_added += 1
+                except Exception:
+                    pass  # Silently skip dependency errors
+
+    print(f"Dependencies: added {dep_added} relationships")
+    print(f"\n=== Summary ===")
+    print(f"Total theorems: {thm_added} added, {thm_skipped} skipped, {thm_failed} failed")
+    print(f"Total definitions: {def_added} added, {def_skipped} skipped, {def_failed} failed")
+    print(f"Total dependencies: {dep_added}")
 
 
 def main(argv: Optional[List[str]] = None) -> None:

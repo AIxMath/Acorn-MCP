@@ -36,6 +36,29 @@ def _ensure_raw_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _ensure_metadata_columns(conn: sqlite3.Connection) -> None:
+    """Add metadata columns if missing."""
+    # Check theorems table
+    cursor = conn.execute("PRAGMA table_info(theorems)")
+    thm_cols = {row["name"] for row in cursor.fetchall()}
+    if "file_path" not in thm_cols:
+        conn.execute("ALTER TABLE theorems ADD COLUMN file_path TEXT")
+    if "line_number" not in thm_cols:
+        conn.execute("ALTER TABLE theorems ADD COLUMN line_number INTEGER")
+
+    # Check definitions table
+    cursor = conn.execute("PRAGMA table_info(definitions)")
+    def_cols = {row["name"] for row in cursor.fetchall()}
+    if "kind" not in def_cols:
+        conn.execute("ALTER TABLE definitions ADD COLUMN kind TEXT")
+    if "file_path" not in def_cols:
+        conn.execute("ALTER TABLE definitions ADD COLUMN file_path TEXT")
+    if "line_number" not in def_cols:
+        conn.execute("ALTER TABLE definitions ADD COLUMN line_number INTEGER")
+
+    conn.commit()
+
+
 async def init_database():
     """Initialize the database with theorem and definition tables."""
     def _init():
@@ -49,6 +72,8 @@ async def init_database():
                     theorem_head TEXT NOT NULL,
                     proof TEXT NOT NULL,
                     raw TEXT,
+                    file_path TEXT,
+                    line_number INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -59,11 +84,34 @@ async def init_database():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     definition TEXT NOT NULL,
+                    kind TEXT,
+                    file_path TEXT,
+                    line_number INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dependencies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_name TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    target_name TEXT NOT NULL,
+                    dependency_type TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(source_name, target_name, dependency_type)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dependencies_source ON dependencies(source_name)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_name)"
+            )
             _ensure_raw_column(conn)
+            _ensure_metadata_columns(conn)
             conn.commit()
         finally:
             conn.close()
@@ -71,14 +119,16 @@ async def init_database():
     await _run_in_executor(_init)
 
 
-async def add_theorem(name: str, theorem_head: str, proof: str, raw: str) -> Dict:
+async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
+                     file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
     """Add a new theorem to the database."""
     def _insert():
         conn = _connect()
         try:
             cursor = conn.execute(
-                "INSERT INTO theorems (name, theorem_head, proof, raw) VALUES (?, ?, ?, ?)",
-                (name, theorem_head, proof, raw)
+                """INSERT INTO theorems (name, theorem_head, proof, raw, file_path, line_number)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (name, theorem_head, proof, raw, file_path, line_number)
             )
             conn.commit()
             return {
@@ -86,7 +136,9 @@ async def add_theorem(name: str, theorem_head: str, proof: str, raw: str) -> Dic
                 "name": name,
                 "theorem_head": theorem_head,
                 "proof": proof,
-                "raw": raw
+                "raw": raw,
+                "file_path": file_path,
+                "line_number": line_number
             }
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Theorem with name '{name}' already exists") from exc
@@ -178,20 +230,25 @@ async def get_all_theorems() -> List[Dict]:
     return await _run_in_executor(_list_all)
 
 
-async def add_definition(name: str, definition: str) -> Dict:
+async def add_definition(name: str, definition: str, kind: Optional[str] = None,
+                        file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
     """Add a new definition to the database."""
     def _insert():
         conn = _connect()
         try:
             cursor = conn.execute(
-                "INSERT INTO definitions (name, definition) VALUES (?, ?)",
-                (name, definition)
+                """INSERT INTO definitions (name, definition, kind, file_path, line_number)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (name, definition, kind, file_path, line_number)
             )
             conn.commit()
             return {
                 "id": cursor.lastrowid,
                 "name": name,
-                "definition": definition
+                "definition": definition,
+                "kind": kind,
+                "file_path": file_path,
+                "line_number": line_number
             }
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"Definition with name '{name}' already exists") from exc
@@ -265,3 +322,71 @@ async def get_all_definitions() -> List[Dict]:
             conn.close()
 
     return await _run_in_executor(_list_all)
+
+
+async def add_dependency(source_name: str, source_type: str, target_name: str, dependency_type: str) -> Dict:
+    """Add a dependency relationship."""
+    def _insert():
+        conn = _connect()
+        try:
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO dependencies (source_name, source_type, target_name, dependency_type)
+                   VALUES (?, ?, ?, ?)""",
+                (source_name, source_type, target_name, dependency_type)
+            )
+            conn.commit()
+            return {
+                "source_name": source_name,
+                "source_type": source_type,
+                "target_name": target_name,
+                "dependency_type": dependency_type
+            }
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_insert)
+
+
+async def get_dependencies(name: str) -> List[Dict]:
+    """Get all dependencies for a given item."""
+    def _get():
+        conn = _connect()
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM dependencies WHERE source_name = ? ORDER BY target_name",
+                (name,)
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_get)
+
+
+async def get_all_items_with_dependencies() -> Dict[str, any]:
+    """Get all theorems, definitions, and their dependencies for topological ordering."""
+    def _get_all():
+        conn = _connect()
+        try:
+            # Get all theorems
+            cursor = conn.execute("SELECT * FROM theorems ORDER BY created_at ASC")
+            theorems = [dict(row) for row in cursor.fetchall()]
+
+            # Get all definitions
+            cursor = conn.execute("SELECT * FROM definitions ORDER BY created_at ASC")
+            definitions = [dict(row) for row in cursor.fetchall()]
+
+            # Get all dependencies
+            cursor = conn.execute("SELECT * FROM dependencies")
+            dependencies = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                "theorems": theorems,
+                "definitions": definitions,
+                "dependencies": dependencies
+            }
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_get_all)

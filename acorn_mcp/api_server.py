@@ -4,7 +4,7 @@ from math import ceil
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from acorn_mcp.database import (
     MAX_PAGE_SIZE,
@@ -18,6 +18,7 @@ from acorn_mcp.database import (
     get_definition_count,
     get_definitions
 )
+from acorn_mcp.export import export_ordered, export_acorn_file
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -169,6 +170,19 @@ async def create_definition(definition: DefinitionCreate):
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/export")
+async def export_items():
+    """Export all items in dependency order."""
+    return await export_ordered()
+
+
+@app.get("/api/export/acorn")
+async def export_acorn():
+    """Export all items as a single Acorn file."""
+    content = await export_acorn_file()
+    return PlainTextResponse(content, media_type="text/plain")
 
 
 # Mount static files

@@ -214,3 +214,4 @@ acornlib/build/
 
 # Local checkout of the Acorn standard library (keep local, not committed)
 /acornlib/
+acorn_mcp.db.backup
