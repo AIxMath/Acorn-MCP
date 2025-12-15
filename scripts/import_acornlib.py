@@ -28,8 +28,9 @@ ACORNLIB_SRC = ROOT_DIR / "acornlib" / "src"
 class ParsedTheorem:
     kind: str  # "theorem" or "axiom"
     name: str
-    head: str
+    head: str  # includes free variables (theorem header + head block)
     proof: str
+    raw: str  # from "theorem/axiom" through the end of the proof block (if present)
     file: Path
     line: int
 
@@ -56,10 +57,11 @@ def _char_iter(segment: str) -> Iterable[Tuple[int, str]]:
 def _capture_block(lines: List[str], start_line: int, start_col: int) -> Tuple[str, int, int]:
     """Capture text inside a {...} block starting at lines[start_line][start_col-1]=='{'.
 
-    Returns (content_without_outer_braces, end_line, end_col_after_closing_brace).
+    Returns (content_without_outer_braces, end_line, end_col_after_closing_brace_in_line).
     """
     brace = 1
     collected: List[str] = []
+    initial_start_col = start_col
     for idx in range(start_line, len(lines)):
         line = lines[idx]
         segment = line[start_col:] if idx == start_line else line
@@ -72,7 +74,8 @@ def _capture_block(lines: List[str], start_line: int, start_col: int) -> Tuple[s
                 if brace == 0:
                     # Closing brace is at j; store content up to j (exclusive)
                     collected.append(segment[:j])
-                    return "\n".join(collected).strip(), idx, j + 1 if idx == start_line else j + 1
+                    closing_col = (initial_start_col if idx == start_line else 0) + j
+                    return "\n".join(collected).strip(), idx, closing_col + 1
         collected.append(segment)
         start_col = 0  # after first line, continue from col 0
     raise ValueError("Unclosed brace block encountered")
@@ -91,6 +94,22 @@ def _module_name(path: Path) -> str:
     return ".".join(rel.parts)
 
 
+def _is_comment_or_blank(line: str) -> bool:
+    stripped = line.strip()
+    return stripped == "" or stripped.startswith("//")
+
+
+def _slice_span(lines: List[str], start_line: int, start_col: int, end_line: int, end_col: int) -> str:
+    """Extract text across lines[start_line: end_line] using half-open cols."""
+    if start_line == end_line:
+        return lines[start_line][start_col:end_col]
+    parts = [lines[start_line][start_col:]]
+    for idx in range(start_line + 1, end_line):
+        parts.append(lines[idx])
+    parts.append(lines[end_line][:end_col])
+    return "\n".join(parts)
+
+
 def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefinition]]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -105,6 +124,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
 
         # Theorem/Axiom parsing
         if stripped.startswith("theorem") or stripped.startswith("axiom"):
+            start_idx = i
             start_line_no = i + 1
             raw_name = None
             kw = "axiom" if stripped.startswith("axiom") else "theorem"
@@ -118,38 +138,51 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                 i += 1
                 continue
 
+            kw_col = line.find(kw)
             head, head_end_line, head_end_col = _capture_block(lines, i, brace_pos + 1)
+            head_text = _slice_span(lines, i, kw_col, head_end_line, head_end_col).strip()
 
-            # Look for proof block starting with "by {"
+            def _maybe_capture_proof(line_idx: int, col_start: int) -> Optional[Tuple[str, int, int]]:
+                remainder = lines[line_idx][col_start:] if col_start < len(lines[line_idx]) else ""
+                by_pos = _find_keyword(remainder, "by")
+                if by_pos is None:
+                    return None
+                brace_after_by = remainder.find("{", by_pos)
+                if brace_after_by == -1:
+                    return None
+                return _capture_block(lines, line_idx, col_start + brace_after_by + 1)
+
             proof = ""
-            search_line = head_end_line
-            search_col = head_end_col
-            proof_found = False
+            raw_end_line = head_end_line
+            raw_end_col = head_end_col
+            proof_block: Optional[Tuple[str, int, int]] = None
             if kw == "theorem":  # only theorems have proofs
-                while search_line < len(lines) and not proof_found:
-                    remainder = lines[search_line][search_col:] if search_col < len(lines[search_line]) else ""
-                    by_pos = _find_keyword(remainder, "by")
-                    if by_pos is not None:
-                        brace_after_by = remainder.find("{", by_pos)
-                        if brace_after_by != -1:
-                            proof, proof_end_line, proof_end_col = _capture_block(
-                                lines, search_line, search_col + brace_after_by + 1
-                            )
-                            i = proof_end_line + 1
-                            proof_found = True
-                            break
-                    search_line += 1
-                    search_col = 0
+                # First, check on the same line as the head closing brace.
+                proof_block = _maybe_capture_proof(head_end_line, head_end_col)
+                if proof_block is None:
+                    # Then, check the next non-blank, non-comment line.
+                    probe_line = head_end_line + 1
+                    while probe_line < len(lines) and _is_comment_or_blank(lines[probe_line]):
+                        probe_line += 1
+                    if probe_line < len(lines):
+                        proof_block = _maybe_capture_proof(probe_line, 0)
 
-            if not proof_found:
+            if proof_block:
+                proof, proof_end_line, proof_end_col = proof_block
+                raw_end_line = proof_end_line
+                raw_end_col = proof_end_col
+                i = proof_end_line + 1
+            else:
                 i = head_end_line + 1
 
+            raw_text = _slice_span(lines, start_idx, kw_col, raw_end_line, raw_end_col).strip()
             theorems.append(
                 ParsedTheorem(
                     kind=kw,
                     name=name,
-                    head=head.strip(),
+                    head=head_text,
                     proof=proof.strip(),
+                    raw=raw_text,
                     file=path,
                     line=start_line_no,
                 )
@@ -221,7 +254,7 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
 
     for thm in theorems:
         try:
-            await add_theorem(thm.name, thm.head, thm.proof, thm.head)
+            await add_theorem(thm.name, thm.head, thm.proof, thm.raw)
             thm_added += 1
         except ValueError:
             thm_skipped += 1
