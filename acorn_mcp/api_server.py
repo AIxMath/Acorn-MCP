@@ -54,6 +54,33 @@ async def read_root():
     return FileResponse(str(INDEX_FILE))
 
 
+@app.get("/theorems.html")
+async def read_theorems_page():
+    """Serve the theorems page."""
+    theorems_file = STATIC_DIR / "theorems.html"
+    if not theorems_file.exists():
+        raise HTTPException(status_code=404, detail="Theorems page not found")
+    return FileResponse(str(theorems_file))
+
+
+@app.get("/definitions.html")
+async def read_definitions_page():
+    """Serve the definitions page."""
+    definitions_file = STATIC_DIR / "definitions.html"
+    if not definitions_file.exists():
+        raise HTTPException(status_code=404, detail="Definitions page not found")
+    return FileResponse(str(definitions_file))
+
+
+@app.get("/create.html")
+async def read_create_page():
+    """Serve the create page."""
+    create_file = STATIC_DIR / "create.html"
+    if not create_file.exists():
+        raise HTTPException(status_code=404, detail="Create page not found")
+    return FileResponse(str(create_file))
+
+
 @app.get("/api/theorems")
 async def list_theorems(
     page: int = Query(1, ge=1),

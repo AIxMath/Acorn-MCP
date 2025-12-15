@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create - Acorn MCP</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">Acorn MCP</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/theorems.html" class="nav-link">Theorems</a>
+                <a href="/definitions.html" class="nav-link">Definitions</a>
+                <a href="/create.html" class="nav-link active">Create</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="content">
+        <div class="container">
+            <!-- Header -->
+            <section style="padding: 2rem 0 3rem;">
+                <h1 style="margin-bottom: 1rem;">Create New Entry</h1>
+                <p style="font-size: 1.125rem; max-width: 700px;">
+                    Add new theorems and definitions to the knowledge base. All fields are required.
+                </p>
+            </section>
+
+            <!-- Forms Grid -->
+            <div class="card-grid">
+                <!-- Theorem Form -->
+                <div class="card" style="grid-column: span 2;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div>
+                            <h2 style="margin-bottom: 0.25rem;">Add Theorem</h2>
+                            <p style="color: var(--text-muted); font-size: 0.95rem;">Include theorem head with free variables, proof, and raw source</p>
+                        </div>
+                        <span class="badge">Theorem</span>
+                    </div>
+
+                    <div id="theorem-message" class="message"></div>
+
+                    <form id="theorem-form">
+                        <div class="form-group">
+                            <label for="theorem-name">Theorem Name *</label>
+                            <input
+                                type="text"
+                                id="theorem-name"
+                                required
+                                placeholder="e.g., Monotonicity of >"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="theorem-head">Theorem Head (with free variables) *</label>
+                            <textarea
+                                id="theorem-head"
+                                required
+                                placeholder="e.g., theorem greater_than(x: Int) { x > 3 implies x > 2 }"
+                                rows="4"
+                            ></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="theorem-proof">Proof *</label>
+                            <textarea
+                                id="theorem-proof"
+                                required
+                                placeholder="Enter the proof text here. Formatting will be preserved."
+                                rows="6"
+                            ></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="theorem-raw">Raw Source *</label>
+                            <textarea
+                                id="theorem-raw"
+                                required
+                                placeholder="Raw theorem text with free variables or additional context"
+                                rows="4"
+                            ></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button type="submit" class="btn btn-primary">
+                                Add Theorem
+                            </button>
+                            <button type="reset" class="btn btn-ghost">
+                                Clear Form
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Definition Form -->
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div>
+                            <h2 style="margin-bottom: 0.25rem;">Add Definition</h2>
+                            <p style="color: var(--text-muted); font-size: 0.95rem;">Define a mathematical concept or term</p>
+                        </div>
+                        <span class="badge">Definition</span>
+                    </div>
+
+                    <div id="definition-message" class="message"></div>
+
+                    <form id="definition-form">
+                        <div class="form-group">
+                            <label for="definition-name">Definition Name *</label>
+                            <input
+                                type="text"
+                                id="definition-name"
+                                required
+                                placeholder="e.g., Prime Number"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="definition-text">Definition *</label>
+                            <textarea
+                                id="definition-text"
+                                required
+                                placeholder="Enter the formal definition text here"
+                                rows="8"
+                            ></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button type="submit" class="btn btn-primary">
+                                Add Definition
+                            </button>
+                            <button type="reset" class="btn btn-ghost">
+                                Clear Form
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Help Section -->
+            <section style="margin-top: 3rem; padding: 2rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 16px;">
+                <h3 style="margin-bottom: 1rem;">Tips for Adding Entries</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                    <div>
+                        <h4 style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 1rem;">Theorems</h4>
+                        <ul style="color: var(--text-muted); line-height: 1.8; padding-left: 1.25rem;">
+                            <li>Include all free variables in the head</li>
+                            <li>Write clear, step-by-step proofs</li>
+                            <li>Provide raw source for reference</li>
+                            <li>Use consistent naming conventions</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 1rem;">Definitions</h4>
+                        <ul style="color: var(--text-muted); line-height: 1.8; padding-left: 1.25rem;">
+                            <li>Keep definitions concise and precise</li>
+                            <li>Use formal mathematical language</li>
+                            <li>Reference related concepts when needed</li>
+                            <li>Include examples if helpful</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>Acorn MCP - Mathematical Knowledge Base</p>
+            <div class="footer-links">
+                <a href="/theorems.html" class="footer-link">Theorems</a>
+                <a href="/definitions.html" class="footer-link">Definitions</a>
+                <a href="/create.html" class="footer-link">Create</a>
+                <a href="/api/theorems?page=1&page_size=20" class="footer-link">API</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function showMessage(elementId, message, isError = false) {
+            const messageEl = document.getElementById(elementId);
+            messageEl.textContent = message;
+            messageEl.className = `message show ${isError ? 'error' : 'success'}`;
+
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 5000);
+        }
+
+        // Theorem form submission
+        document.getElementById('theorem-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('theorem-name').value.trim();
+            const theoremHead = document.getElementById('theorem-head').value.trim();
+            const proof = document.getElementById('theorem-proof').value.trim();
+            const raw = document.getElementById('theorem-raw').value.trim();
+
+            try {
+                const response = await fetch('/api/theorems', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name,
+                        theorem_head: theoremHead,
+                        proof,
+                        raw
+                    })
+                });
+
+                if (response.ok) {
+                    showMessage('theorem-message', 'Theorem added successfully!');
+                    document.getElementById('theorem-form').reset();
+
+                    // Scroll to top to see message
+                    document.querySelector('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    const error = await response.json();
+                    showMessage('theorem-message', error.detail || 'Error adding theorem', true);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('theorem-message', 'Network error. Please try again.', true);
+            }
+        });
+
+        // Definition form submission
+        document.getElementById('definition-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('definition-name').value.trim();
+            const definition = document.getElementById('definition-text').value.trim();
+
+            try {
+                const response = await fetch('/api/definitions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name,
+                        definition
+                    })
+                });
+
+                if (response.ok) {
+                    showMessage('definition-message', 'Definition added successfully!');
+                    document.getElementById('definition-form').reset();
+
+                    // Scroll to see message
+                    document.querySelectorAll('.card')[1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    const error = await response.json();
+                    showMessage('definition-message', error.detail || 'Error adding definition', true);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('definition-message', 'Network error. Please try again.', true);
+            }
+        });
+    </script>
+</body>
+</html>

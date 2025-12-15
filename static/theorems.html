@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theorems - Acorn MCP</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">Acorn MCP</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/theorems.html" class="nav-link active">Theorems</a>
+                <a href="/definitions.html" class="nav-link">Definitions</a>
+                <a href="/create.html" class="nav-link">Create</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="content">
+        <div class="container">
+            <!-- Header -->
+            <section style="padding: 2rem 0 3rem;">
+                <h1 style="margin-bottom: 1rem;">Theorems</h1>
+                <p style="font-size: 1.125rem; max-width: 700px;">
+                    Search and browse all theorems. Search covers names, theorem heads, proofs, and raw text.
+                </p>
+            </section>
+
+            <!-- Search Bar -->
+            <div class="search-bar">
+                <input
+                    type="search"
+                    id="search-input"
+                    placeholder="Search theorems by name, head, proof, or raw text..."
+                >
+                <button class="btn btn-primary" id="search-btn">Search</button>
+                <button class="btn btn-ghost" id="clear-btn">Clear</button>
+            </div>
+
+            <!-- Stats -->
+            <div style="color: var(--text-muted); margin-bottom: 2rem;">
+                <span id="results-info">Loading...</span>
+            </div>
+
+            <!-- Results -->
+            <div id="results-container" class="items-list">
+                <div class="loading">Loading theorems...</div>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="pagination-container" style="display: none;">
+                <div class="pagination-controls">
+                    <button class="btn btn-secondary" id="prev-btn" disabled>Previous</button>
+                    <button class="btn btn-primary" id="next-btn" disabled>Next</button>
+                </div>
+                <div class="pagination-info" id="page-info"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>Acorn MCP - Mathematical Knowledge Base</p>
+            <div class="footer-links">
+                <a href="/theorems.html" class="footer-link">Theorems</a>
+                <a href="/definitions.html" class="footer-link">Definitions</a>
+                <a href="/create.html" class="footer-link">Create</a>
+                <a href="/api/theorems?page=1&page_size=20" class="footer-link">API</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let currentQuery = '';
+        const pageSize = 20;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function renderTheorem(theorem) {
+            return `
+                <div class="item">
+                    <div class="item-header">
+                        <div>
+                            <div class="item-title">${escapeHtml(theorem.name)}</div>
+                            <div class="item-meta">Added ${formatDate(theorem.created_at)}</div>
+                        </div>
+                        <span class="badge">Theorem</span>
+                    </div>
+
+                    <div class="code-section">
+                        <div class="code-label">Theorem Head (with free variables)</div>
+                        <pre class="code-block">${escapeHtml(theorem.theorem_head)}</pre>
+                    </div>
+
+                    <div class="code-section">
+                        <div class="code-label">Proof</div>
+                        <pre class="code-block">${escapeHtml(theorem.proof)}</pre>
+                    </div>
+
+                    <div class="code-section">
+                        <div class="code-label">Raw Source</div>
+                        <pre class="code-block">${escapeHtml(theorem.raw)}</pre>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadTheorems(page = 1) {
+            const resultsContainer = document.getElementById('results-container');
+            const resultsInfo = document.getElementById('results-info');
+            const paginationContainer = document.getElementById('pagination-container');
+
+            resultsContainer.innerHTML = '<div class="loading">Loading theorems...</div>';
+
+            try {
+                const queryParam = currentQuery ? `&q=${encodeURIComponent(currentQuery)}` : '';
+                const response = await fetch(`/api/theorems?page=${page}&page_size=${pageSize}${queryParam}`);
+                const data = await response.json();
+
+                currentPage = data.page;
+                totalPages = data.pages;
+
+                // Update results info
+                const filterNote = currentQuery ? ` matching "${currentQuery}"` : '';
+                resultsInfo.textContent = `${data.total} theorem${data.total !== 1 ? 's' : ''}${filterNote}`;
+
+                // Render theorems
+                if (!data.theorems || data.theorems.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <h3 style="margin-bottom: 0.5rem;">No theorems found</h3>
+                            <p style="color: var(--text-muted);">${currentQuery ? 'Try a different search query' : 'Add your first theorem to get started'}</p>
+                            ${!currentQuery ? '<a href="/create.html" class="btn btn-primary" style="margin-top: 1rem;">Add Theorem</a>' : ''}
+                        </div>
+                    `;
+                    paginationContainer.style.display = 'none';
+                } else {
+                    resultsContainer.innerHTML = data.theorems.map(renderTheorem).join('');
+
+                    // Update pagination
+                    paginationContainer.style.display = 'flex';
+                    document.getElementById('prev-btn').disabled = currentPage <= 1;
+                    document.getElementById('next-btn').disabled = currentPage >= totalPages;
+                    document.getElementById('page-info').textContent =
+                        `Page ${currentPage} of ${totalPages}`;
+                }
+            } catch (error) {
+                console.error('Error loading theorems:', error);
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h3 style="margin-bottom: 0.5rem; color: var(--error);">Error loading theorems</h3>
+                        <p style="color: var(--text-muted);">Please try again later</p>
+                    </div>
+                `;
+                paginationContainer.style.display = 'none';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('search-btn').addEventListener('click', () => {
+            currentQuery = document.getElementById('search-input').value.trim();
+            loadTheorems(1);
+        });
+
+        document.getElementById('search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                currentQuery = document.getElementById('search-input').value.trim();
+                loadTheorems(1);
+            }
+        });
+
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            currentQuery = '';
+            document.getElementById('search-input').value = '';
+            loadTheorems(1);
+        });
+
+        document.getElementById('prev-btn').addEventListener('click', () => {
+            if (currentPage > 1) {
+                loadTheorems(currentPage - 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+
+        document.getElementById('next-btn').addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                loadTheorems(currentPage + 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+
+        // Initial load
+        loadTheorems(1);
+    </script>
+</body>
+</html>
