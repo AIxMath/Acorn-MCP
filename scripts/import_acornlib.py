@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Set
 
 from acorn_mcp.database import (
     init_database,
@@ -99,13 +99,37 @@ def _module_name(path: Path) -> str:
 def _extract_identifiers(text: str) -> set[str]:
     """Extract potential identifiers from Acorn code text.
 
-    This is a simple heuristic approach - looks for capitalized words
-    that could be type names or module-qualified names.
+    This extracts type names and module-qualified identifiers while filtering
+    out Acorn keywords and common noise.
     """
+    # Acorn keywords and common non-identifier words to filter out
+    keywords = {
+        'If', 'Then', 'Else', 'Match', 'Case', 'Let', 'Define', 'Theorem',
+        'Axiom', 'By', 'Proof', 'Import', 'From', 'As', 'Type', 'Struct',
+        'Inductive', 'Typeclass', 'Attributes', 'True', 'False', 'And', 'Or',
+        'Not', 'Forall', 'Exists', 'Function', 'Return', 'For', 'While',
+        'Break', 'Continue', 'Try', 'Catch', 'Finally', 'Throw', 'Class',
+        'Interface', 'Enum', 'Public', 'Private', 'Protected', 'Static',
+        'Final', 'Abstract', 'Override', 'Virtual', 'Const', 'Var', 'Val',
+        'Implies', 'Iff'
+    }
+
     # Match patterns like: TypeName, Module.name, Module.SubModule.name
+    # Must start with capital letter for type/module, or be a qualified name
     pattern = r'\b[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\b'
     matches = re.findall(pattern, text)
-    return set(matches)
+
+    # Filter out keywords and single-letter identifiers
+    filtered = set()
+    for match in matches:
+        # Get the first component (before any dots)
+        first_part = match.split('.')[0]
+
+        # Skip if it's a keyword or single letter
+        if first_part not in keywords and len(first_part) > 1:
+            filtered.add(match)
+
+    return filtered
 
 
 def _is_comment_or_blank(line: str) -> bool:
@@ -161,10 +185,30 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
     definitions: List[ParsedDefinition] = []
     module = _module_name(path)
 
+    # Track imports at the file level
+    file_imports: Set[str] = set()
+
     i = 0
     while i < len(lines):
         line = lines[i]
         stripped = line.lstrip()
+
+        # Parse import statements (e.g., "from nat import Nat")
+        if stripped.startswith("from ") or stripped.startswith("import "):
+            # Extract module names from import
+            import_match = re.match(r"(?:from\s+([A-Za-z_][A-Za-z0-9_/.]*)\s+)?import\s+([A-Za-z_][A-Za-z0-9_,\s]*)", stripped)
+            if import_match:
+                module_path = import_match.group(1)
+                imported_items = import_match.group(2)
+                if module_path:
+                    file_imports.add(module_path)
+                # Add individual imported items
+                for item in imported_items.split(','):
+                    item = item.strip()
+                    if item:
+                        file_imports.add(item)
+            i += 1
+            continue
 
         # Theorem/Axiom parsing
         if stripped.startswith("theorem") or stripped.startswith("axiom"):
@@ -374,28 +418,52 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
 
     # Second pass: extract and add dependencies
     print("\n=== Extracting dependencies ===")
+
+    # Build a set of all known items (theorems + definitions) for validation
+    all_item_names = set()
+    for thm in theorems:
+        all_item_names.add(thm.name)
+        # Also add just the last component (e.g., "Real" from "real.Real")
+        if '.' in thm.name:
+            all_item_names.add(thm.name.split('.')[-1])
+
+    for dfn in definitions:
+        all_item_names.add(dfn.name)
+        if '.' in dfn.name:
+            all_item_names.add(dfn.name.split('.')[-1])
+
     for thm in theorems:
         # Extract identifiers from theorem head and proof
         all_text = f"{thm.head}\n{thm.proof}"
         identifiers = _extract_identifiers(all_text)
+
+        # Only add dependencies for identifiers that:
+        # 1. Match known items in our database, OR
+        # 2. Are qualified names (contain a dot)
         for ident in identifiers:
             if ident and ident != thm.name:
-                try:
-                    await add_dependency(thm.name, "theorem", ident, "uses")
-                    dep_added += 1
-                except Exception:
-                    pass  # Silently skip dependency errors
+                # Check if it's a known item or a qualified name
+                base_name = ident.split('.')[0] if '.' in ident else ident
+                if ident in all_item_names or base_name in all_item_names or '.' in ident:
+                    try:
+                        await add_dependency(thm.name, "theorem", ident, "uses")
+                        dep_added += 1
+                    except Exception:
+                        pass  # Silently skip dependency errors
 
     for dfn in definitions:
         # Extract identifiers from definition body
         identifiers = _extract_identifiers(dfn.body)
+
         for ident in identifiers:
             if ident and ident != dfn.name:
-                try:
-                    await add_dependency(dfn.name, "definition", ident, "uses")
-                    dep_added += 1
-                except Exception:
-                    pass  # Silently skip dependency errors
+                base_name = ident.split('.')[0] if '.' in ident else ident
+                if ident in all_item_names or base_name in all_item_names or '.' in ident:
+                    try:
+                        await add_dependency(dfn.name, "definition", ident, "uses")
+                        dep_added += 1
+                    except Exception:
+                        pass  # Silently skip dependency errors
 
     print(f"Dependencies: added {dep_added} relationships")
     print(f"\n=== Summary ===")
