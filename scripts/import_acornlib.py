@@ -139,36 +139,43 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                 continue
 
             kw_col = line.find(kw)
-            head, head_end_line, head_end_col = _capture_block(lines, i, brace_pos + 1)
+            head_content, head_end_line, head_end_col = _capture_block(lines, i, brace_pos + 1)
+            # head_text should be from keyword through the closing } of the head block
             head_text = _slice_span(lines, i, kw_col, head_end_line, head_end_col).strip()
 
-            def _maybe_capture_proof(line_idx: int, col_start: int) -> Optional[Tuple[str, int, int]]:
+            def _maybe_capture_proof(line_idx: int, col_start: int) -> Optional[Tuple[str, int, int, int]]:
+                """Returns (proof_content, by_line, by_col, proof_end_line, proof_end_col) or None."""
                 remainder = lines[line_idx][col_start:] if col_start < len(lines[line_idx]) else ""
                 by_pos = _find_keyword(remainder, "by")
                 if by_pos is None:
                     return None
+                by_absolute_col = col_start + by_pos
                 brace_after_by = remainder.find("{", by_pos)
                 if brace_after_by == -1:
                     return None
-                return _capture_block(lines, line_idx, col_start + brace_after_by + 1)
+                proof_content, proof_end_line, proof_end_col = _capture_block(
+                    lines, line_idx, col_start + brace_after_by + 1
+                )
+                return proof_content, line_idx, by_absolute_col, proof_end_line, proof_end_col
 
             proof = ""
             raw_end_line = head_end_line
             raw_end_col = head_end_col
-            proof_block: Optional[Tuple[str, int, int]] = None
+            proof_result: Optional[Tuple[str, int, int, int, int]] = None
             if kw == "theorem":  # only theorems have proofs
                 # First, check on the same line as the head closing brace.
-                proof_block = _maybe_capture_proof(head_end_line, head_end_col)
-                if proof_block is None:
+                proof_result = _maybe_capture_proof(head_end_line, head_end_col)
+                if proof_result is None:
                     # Then, check the next non-blank, non-comment line.
                     probe_line = head_end_line + 1
                     while probe_line < len(lines) and _is_comment_or_blank(lines[probe_line]):
                         probe_line += 1
                     if probe_line < len(lines):
-                        proof_block = _maybe_capture_proof(probe_line, 0)
+                        proof_result = _maybe_capture_proof(probe_line, 0)
 
-            if proof_block:
-                proof, proof_end_line, proof_end_col = proof_block
+            if proof_result:
+                proof_content, by_line, by_col, proof_end_line, proof_end_col = proof_result
+                proof = proof_content.strip()
                 raw_end_line = proof_end_line
                 raw_end_col = proof_end_col
                 i = proof_end_line + 1
@@ -181,7 +188,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                     kind=kw,
                     name=name,
                     head=head_text,
-                    proof=proof.strip(),
+                    proof=proof,
                     raw=raw_text,
                     file=path,
                     line=start_line_no,
