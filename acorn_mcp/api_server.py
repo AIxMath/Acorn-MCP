@@ -16,7 +16,8 @@ from acorn_mcp.database import (
     add_definition,
     get_definition,
     get_definition_count,
-    get_definitions
+    get_definitions,
+    get_dependencies,
 )
 from acorn_mcp.export import export_ordered, export_acorn_file
 
@@ -183,6 +184,17 @@ async def export_acorn():
     """Export all items as a single Acorn file."""
     content = await export_acorn_file()
     return PlainTextResponse(content, media_type="text/plain")
+
+
+@app.get("/api/dependencies/{item_name}")
+async def get_item_dependencies(item_name: str):
+    """Get all dependencies for a specific item."""
+    deps = await get_dependencies(item_name)
+    return {
+        "item": item_name,
+        "dependencies": deps,
+        "count": len(deps)
+    }
 
 
 # Mount static files

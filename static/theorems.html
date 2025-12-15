@@ -105,7 +105,16 @@
                             <div class="item-title">${escapeHtml(theorem.name)}</div>
                             <div class="item-meta">Added ${formatDate(theorem.created_at)}</div>
                         </div>
-                        <span class="badge">Theorem</span>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button class="badge" style="cursor: pointer; background: var(--bg-tertiary); border: 1px solid var(--border-default);" onclick="toggleDependencies('${escapeHtml(theorem.name)}', this)">
+                                Show Dependencies
+                            </button>
+                            <span class="badge">Theorem</span>
+                        </div>
+                    </div>
+
+                    <div class="dependencies-container" id="deps-${escapeHtml(theorem.name).replace(/\./g, '-')}" style="display: none; margin-bottom: 1rem;">
+                        <div class="loading" style="padding: 1rem; text-align: center;">Loading dependencies...</div>
                     </div>
 
                     <div class="code-section">
@@ -212,6 +221,57 @@
 
         // Initial load
         loadTheorems(1);
+
+        // Toggle dependencies
+        const loadedDeps = new Set();
+        window.toggleDependencies = async function(name, button) {
+            const safeId = name.replace(/\./g, '-');
+            const container = document.getElementById(`deps-${safeId}`);
+
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                button.textContent = 'Hide Dependencies';
+
+                // Load dependencies if not already loaded
+                if (!loadedDeps.has(name)) {
+                    try {
+                        const response = await fetch(`/api/dependencies/${encodeURIComponent(name)}`);
+                        const data = await response.json();
+
+                        if (data.dependencies && data.dependencies.length > 0) {
+                            const depsList = data.dependencies
+                                .map(dep => `<div style="padding: 0.5rem; background: var(--bg-primary); border-radius: 6px; font-family: monospace; font-size: 0.9rem;">${escapeHtml(dep.target_name)}<span style="color: var(--text-muted); margin-left: 0.5rem;">(${dep.dependency_type})</span></div>`)
+                                .join('');
+                            container.innerHTML = `
+                                <div style="padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: 8px;">
+                                    <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--text-secondary);">Dependencies (${data.count})</div>
+                                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                        ${depsList}
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            container.innerHTML = `
+                                <div style="padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: 8px; color: var(--text-muted); text-align: center;">
+                                    No dependencies found
+                                </div>
+                            `;
+                        }
+                        loadedDeps.add(name);
+                    } catch (error) {
+                        console.error('Error loading dependencies:', error);
+                        container.innerHTML = `
+                            <div style="padding: 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: 8px; color: var(--error); text-align: center;">
+                                Error loading dependencies
+                            </div>
+                        `;
+                    }
+                }
+            } else {
+                container.style.display = 'none';
+                button.textContent = 'Show Dependencies';
+            }
+        };
     </script>
 </body>
 </html>

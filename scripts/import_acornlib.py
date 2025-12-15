@@ -124,6 +124,36 @@ def _slice_span(lines: List[str], start_line: int, start_col: int, end_line: int
     return "\n".join(parts)
 
 
+def _dedent_block(text: str) -> str:
+    """Remove common leading whitespace from all lines in a text block.
+
+    Similar to textwrap.dedent but preserves the first line.
+    """
+    lines = text.split('\n')
+    if not lines:
+        return text
+
+    # Find minimum indentation (ignoring empty lines)
+    min_indent = float('inf')
+    for line in lines:
+        if line.strip():  # Non-empty line
+            leading_spaces = len(line) - len(line.lstrip())
+            min_indent = min(min_indent, leading_spaces)
+
+    if min_indent == float('inf') or min_indent == 0:
+        return text
+
+    # Remove the common indentation from all lines
+    dedented_lines = []
+    for line in lines:
+        if line.strip():  # Non-empty line
+            dedented_lines.append(line[min_indent:])
+        else:  # Empty line
+            dedented_lines.append(line)
+
+    return '\n'.join(dedented_lines)
+
+
 def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefinition]]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -189,7 +219,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
 
             if proof_result:
                 proof_content, _, _, proof_end_line, proof_end_col = proof_result
-                proof = proof_content.strip()
+                proof = _dedent_block(proof_content.strip())
                 raw_end_line = proof_end_line
                 raw_end_col = proof_end_col
                 i = proof_end_line + 1
@@ -225,10 +255,11 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
 
             if def_kw == "attributes":
                 # attributes blocks: "attributes TypeName {"
+                # Generate a unique name by appending line number to avoid conflicts
                 m = re.match(r"attributes\s+([A-Za-z_][A-Za-z0-9_<>\[\],\s]*?)\s*\{", stripped)
                 if m:
                     target_type = m.group(1).strip()
-                    raw_name = f"{target_type}_attributes"
+                    raw_name = f"{target_type}_attributes_{start_line_no}"
             else:
                 # Other definition types: "keyword name(...) {"
                 m = re.match(rf"{def_kw}\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
@@ -315,6 +346,7 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
     print(f"Theorems: added {thm_added}, skipped {thm_skipped}, failed {thm_failed}")
 
     print("\n=== Importing definitions ===")
+    failed_details = []
     for dfn in definitions:
         try:
             await add_definition(
@@ -326,13 +358,19 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
             def_added += 1
         except ValueError as e:
             def_skipped += 1
-            if "already exists" not in str(e):
-                print(f"[skip] {dfn.name}: {e}")
+            if "already exists" in str(e):
+                failed_details.append(f"  Duplicate: {dfn.name} ({dfn.file.name}:{dfn.line}) [kind={dfn.kind}]")
+            else:
+                failed_details.append(f"  ValueError: {dfn.name} - {e}")
         except Exception as exc:
             def_failed += 1
-            print(f"[ERROR] Failed to add definition {dfn.name} ({dfn.file}:{dfn.line}) [kind={dfn.kind}]: {exc}", file=sys.stderr)
+            failed_details.append(f"  ERROR: {dfn.name} ({dfn.file.name}:{dfn.line}) [kind={dfn.kind}]: {exc}")
 
     print(f"Definitions: added {def_added}, skipped {def_skipped}, failed {def_failed}")
+    if failed_details and (def_skipped > 0 or def_failed > 0):
+        print("\nSkipped/Failed details (showing first 10):")
+        for detail in failed_details[:10]:
+            print(detail)
 
     # Second pass: extract and add dependencies
     print("\n=== Extracting dependencies ===")
