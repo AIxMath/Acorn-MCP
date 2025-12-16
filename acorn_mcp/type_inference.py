@@ -241,6 +241,20 @@ def extract_dependencies_with_types(text: str, signature: str = "") -> Set[str]:
             dependencies.add(var_type)
             dependencies.add(f"{var_type}.{prop_name}")
 
+    # Find standalone function calls: function_name(...)
+    # These are lowercase identifiers followed by '(' that aren't method calls
+    # Pattern: word boundary, lowercase identifier, optional whitespace, opening paren
+    # But NOT preceded by a dot (which would make it a method call)
+    func_call_pattern = r'(?<!\.)(?<![A-Za-z0-9_])([a-z_][a-z0-9_]*)\s*\('
+    for match in re.finditer(func_call_pattern, text):
+        func_name = match.group(1)
+        # Skip common keywords and known variables
+        if (func_name not in {'if', 'while', 'for', 'match', 'forall', 'exists', 'let', 'satisfy'}
+            and func_name not in ctx.variables):
+            # Also skip single-letter names (likely variables, not functions)
+            if len(func_name) > 1:
+                dependencies.add(func_name)
+
     return dependencies
 
 

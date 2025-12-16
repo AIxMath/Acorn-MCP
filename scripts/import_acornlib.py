@@ -324,7 +324,44 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
             try:
                 body, def_end_line, _ = _capture_block(lines, i, brace_pos + 1)
                 header = line[:brace_pos].strip()
-                rendered = f"{header} {{\n{body}\n}}"
+
+                # Check for constraint block (for structures)
+                constraint_text = ""
+                final_line = def_end_line
+                if def_kw == "structure":
+                    # Check if "constraint {" appears on the same line as the closing }
+                    same_line_remainder = lines[def_end_line][lines[def_end_line].find('}') + 1:]
+                    constraint_pos = _find_keyword(same_line_remainder, "constraint")
+
+                    if constraint_pos is not None:
+                        # Constraint is on the same line
+                        constraint_brace = same_line_remainder.find("{", constraint_pos)
+                        if constraint_brace != -1:
+                            # Start position in the line
+                            start_col = lines[def_end_line].find('}') + 1 + constraint_brace + 1
+                            constraint_body, constraint_end, _ = _capture_block(lines, def_end_line, start_col)
+                            dedented_constraint = _dedent_block(constraint_body)
+                            constraint_text = f" constraint {{\n{dedented_constraint}\n}}"
+                            final_line = constraint_end
+                    else:
+                        # Look for "constraint {" on the next non-blank line
+                        probe = def_end_line + 1
+                        while probe < len(lines) and _is_comment_or_blank(lines[probe]):
+                            probe += 1
+                        if probe < len(lines):
+                            probe_line = lines[probe].lstrip()
+                            if probe_line.startswith("constraint"):
+                                constraint_brace = lines[probe].find("{")
+                                if constraint_brace != -1:
+                                    constraint_body, constraint_end, _ = _capture_block(lines, probe, constraint_brace + 1)
+                                    dedented_constraint = _dedent_block(constraint_body)
+                                    constraint_text = f" constraint {{\n{dedented_constraint}\n}}"
+                                    final_line = constraint_end
+
+                # Dedent the body content
+                dedented_body = _dedent_block(body)
+                rendered = f"{header} {{\n{dedented_body}\n}}{constraint_text}"
+
                 definitions.append(
                     ParsedDefinition(
                         kind=def_kw,
@@ -335,7 +372,7 @@ def parse_acorn_file(path: Path) -> Tuple[List[ParsedTheorem], List[ParsedDefini
                         target_type=target_type
                     )
                 )
-                i = def_end_line + 1
+                i = final_line + 1
             except ValueError as e:
                 print(f"[warn] Failed to parse {def_kw} at {path}:{start_line_no}: {e}", file=sys.stderr)
                 i += 1
