@@ -103,8 +103,8 @@ class AcornParser:
             if stripped.startswith('attributes '):
                 item, end_line = self._parse_attributes(lines, i, path)
                 if item:
-                    items.append(item)
-                    # Also add attributes members as separate items
+                    # Don't add the attributes block itself, only the expanded members
+                    # items.append(item)
                     items.extend(self._expand_attributes_members(item, path))
                 i = end_line + 1
                 continue
