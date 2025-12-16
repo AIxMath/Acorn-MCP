@@ -60,10 +60,28 @@ def _ensure_metadata_columns(conn: sqlite3.Connection) -> None:
 
 
 async def init_database():
-    """Initialize the database with theorem and definition tables."""
+    """Initialize the database with unified items table."""
     def _init():
         conn = _connect()
         try:
+            # Create unified items table
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    kind TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    file_path TEXT,
+                    line_number INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_name ON items(name)")
+
+            # Keep legacy tables for backward compatibility and migration
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS theorems (
@@ -118,6 +136,128 @@ async def init_database():
 
     await _run_in_executor(_init)
 
+
+# Unified items table functions
+
+async def add_item(name: str, kind: str, source: str,
+                   file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
+    """Add a new item to the unified items table."""
+    def _insert():
+        conn = _connect()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO items (name, kind, source, file_path, line_number)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (name, kind, source, file_path, line_number)
+            )
+            conn.commit()
+            return {
+                "id": cursor.lastrowid,
+                "name": name,
+                "kind": kind,
+                "source": source,
+                "file_path": file_path,
+                "line_number": line_number
+            }
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Item with name '{name}' already exists") from exc
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_insert)
+
+
+async def get_item(name: str) -> Optional[Dict]:
+    """Get an item by name."""
+    def _get():
+        conn = _connect()
+        try:
+            cursor = conn.execute("SELECT * FROM items WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_get)
+
+
+async def get_item_count(query: Optional[str] = None, kind: Optional[str] = None) -> int:
+    """Return total number of items (optionally filtered)."""
+    def _count():
+        conn = _connect()
+        try:
+            conditions = []
+            params = []
+
+            if query:
+                conditions.append("(name LIKE ? OR source LIKE ?)")
+                term = f"%{query.strip()}%"
+                params.extend([term, term])
+
+            if kind:
+                conditions.append("kind = ?")
+                params.append(kind)
+
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+            cursor = conn.execute(f"SELECT COUNT(*) FROM items{where_clause}", params)
+            (count,) = cursor.fetchone()
+            return count
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_count)
+
+
+async def get_items(limit: int, offset: int = 0, query: Optional[str] = None, kind: Optional[str] = None) -> List[Dict]:
+    """Return a slice of items ordered by recency."""
+    if limit < 1:
+        raise ValueError("Limit must be at least 1")
+    if limit > MAX_PAGE_SIZE:
+        raise ValueError(f"Limit cannot exceed {MAX_PAGE_SIZE}")
+
+    def _list():
+        conn = _connect()
+        try:
+            conditions = []
+            params = []
+
+            if query:
+                conditions.append("(name LIKE ? OR source LIKE ?)")
+                term = f"%{query.strip()}%"
+                params.extend([term, term])
+
+            if kind:
+                conditions.append("kind = ?")
+                params.append(kind)
+
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+            cursor = conn.execute(
+                f"SELECT * FROM items{where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset)
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_list)
+
+
+async def get_all_items() -> List[Dict]:
+    """Get all items from the database."""
+    def _list_all():
+        conn = _connect()
+        try:
+            cursor = conn.execute("SELECT * FROM items ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_list_all)
+
+
+# Legacy theorem/definition functions (kept for backward compatibility)
 
 async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
                      file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:

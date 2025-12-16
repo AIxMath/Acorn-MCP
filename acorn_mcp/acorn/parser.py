@@ -556,7 +556,7 @@ class AcornParser:
             return None, start
 
     def _parse_attributes_members(self, body: str, target_type: str) -> List[Definition]:
-        """Parse define statements from attributes block."""
+        """Parse let and define statements from attributes block."""
         members = []
         lines = body.split('\n')
 
@@ -570,10 +570,42 @@ class AcornParser:
                 i += 1
                 continue
 
-            # Look for define statements
-            match = re.match(r'define\s+([a-z_][a-z0-9_]*)', stripped)
-            if match:
-                member_name = match.group(1)
+            # Look for let statements (constants/values)
+            # Pattern: let name: Type = value
+            let_match = re.match(r'let\s+([a-zA-Z0-9_]+)\s*:', stripped)
+            if let_match:
+                member_name = let_match.group(1)
+                qualified_name = f"{target_type}.{member_name}"
+
+                # Capture until end of statement (usually one line, or until we hit a brace balance)
+                member_lines = [line]
+                if '{' in line:
+                    brace_count = line.count('{') - line.count('}')
+                    j = i + 1
+                    while j < len(lines) and brace_count > 0:
+                        member_lines.append(lines[j])
+                        brace_count += lines[j].count('{') - lines[j].count('}')
+                        j += 1
+                    i = j
+                else:
+                    i += 1
+
+                member_source = '\n'.join(member_lines)
+
+                members.append(Definition(
+                    name=qualified_name,
+                    kind="attributes_constant",
+                    source=member_source,
+                    location=None,  # Will be set by caller
+                    signature=member_source.strip(),
+                    body=member_source.strip(),
+                ))
+                continue
+
+            # Look for define statements (methods)
+            define_match = re.match(r'define\s+([a-z_][a-z0-9_]*)', stripped)
+            if define_match:
+                member_name = define_match.group(1)
                 qualified_name = f"{target_type}.{member_name}"
 
                 # Capture member body
