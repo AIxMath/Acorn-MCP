@@ -100,42 +100,6 @@ def _module_name(path: Path) -> str:
     return ".".join(rel.parts)
 
 
-def _extract_identifiers(text: str) -> set[str]:
-    """Extract potential identifiers from Acorn code text.
-
-    This extracts type names and module-qualified identifiers while filtering
-    out Acorn keywords and common noise.
-    """
-    # Acorn keywords and common non-identifier words to filter out
-    keywords = {
-        'If', 'Then', 'Else', 'Match', 'Case', 'Let', 'Define', 'Theorem',
-        'Axiom', 'By', 'Proof', 'Import', 'From', 'As', 'Type', 'Struct',
-        'Inductive', 'Typeclass', 'Attributes', 'True', 'False', 'And', 'Or',
-        'Not', 'Forall', 'Exists', 'Function', 'Return', 'For', 'While',
-        'Break', 'Continue', 'Try', 'Catch', 'Finally', 'Throw', 'Class',
-        'Interface', 'Enum', 'Public', 'Private', 'Protected', 'Static',
-        'Final', 'Abstract', 'Override', 'Virtual', 'Const', 'Var', 'Val',
-        'Implies', 'Iff'
-    }
-
-    # Match patterns like: TypeName, Module.name, Module.SubModule.name
-    # Must start with capital letter for type/module, or be a qualified name
-    pattern = r'\b[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\b'
-    matches = re.findall(pattern, text)
-
-    # Filter out keywords and single-letter identifiers
-    filtered = set()
-    for match in matches:
-        # Get the first component (before any dots)
-        first_part = match.split('.')[0]
-
-        # Skip if it's a keyword or single letter
-        if first_part not in keywords and len(first_part) > 1:
-            filtered.add(match)
-
-    return filtered
-
-
 def _is_comment_or_blank(line: str) -> bool:
     stripped = line.strip()
     return stripped == "" or stripped.startswith("//")

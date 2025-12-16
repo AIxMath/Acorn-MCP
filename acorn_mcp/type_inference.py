@@ -262,13 +262,13 @@ def extract_theorem_dependencies(name: str, head: str, proof: str, raw: str) -> 
     """Extract dependencies from a theorem.
 
     Args:
-        name: Theorem name (not used for extraction)
+        name: Theorem name (used to filter self-references)
         head: Theorem head with signature
         proof: Proof body
         raw: Raw source (used for additional context)
 
     Returns:
-        Set of qualified dependencies
+        Set of qualified dependencies (excluding the theorem itself)
     """
     # Combine head and proof for full context
     full_text = f"{head}\n{proof}"
@@ -278,22 +278,40 @@ def extract_theorem_dependencies(name: str, head: str, proof: str, raw: str) -> 
     sig_match = re.match(r'theorem\s+[a-z_][a-z0-9_]*(?:\[[^\]]+\])?\s*\([^)]*\)', head)
     signature = sig_match.group(0) if sig_match else head
 
-    return extract_dependencies_with_types(full_text, signature)
+    deps = extract_dependencies_with_types(full_text, signature)
+
+    # Remove the theorem name itself and any qualified versions
+    deps.discard(name)
+    # Also remove just the last component of the name (e.g., "foo" from "module.foo")
+    if '.' in name:
+        short_name = name.split('.')[-1]
+        deps.discard(short_name)
+
+    return deps
 
 
 def extract_definition_dependencies(name: str, body: str) -> Set[str]:
     """Extract dependencies from a definition.
 
     Args:
-        name: Definition name (not used for extraction)
+        name: Definition name (used to filter self-references)
         body: Definition body
 
     Returns:
-        Set of qualified dependencies
+        Set of qualified dependencies (excluding the definition itself)
     """
     # Extract signature from body
     # Pattern: define/inductive/etc name(params) -> ReturnType { body }
     sig_match = re.match(r'(?:define|inductive|structure|typeclass)\s+[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]+\])?\s*(?:\([^)]*\))?(?:\s*->\s*[A-Za-z0-9_<>\[\]]+)?', body)
     signature = sig_match.group(0) if sig_match else ""
 
-    return extract_dependencies_with_types(body, signature)
+    deps = extract_dependencies_with_types(body, signature)
+
+    # Remove the definition name itself and any qualified versions
+    deps.discard(name)
+    # Also remove just the last component of the name
+    if '.' in name:
+        short_name = name.split('.')[-1]
+        deps.discard(short_name)
+
+    return deps
