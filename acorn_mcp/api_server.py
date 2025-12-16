@@ -9,6 +9,10 @@ from pydantic import BaseModel
 from acorn_mcp.database import (
     MAX_PAGE_SIZE,
     init_database,
+    add_item,
+    get_item,
+    get_item_count,
+    get_items,
     add_theorem,
     get_theorem,
     get_theorem_count,
@@ -46,6 +50,12 @@ class TheoremCreate(BaseModel):
 class DefinitionCreate(BaseModel):
     name: str
     definition: str
+
+
+class ItemCreate(BaseModel):
+    name: str
+    kind: str
+    source: str
 
 
 @app.get("/")
@@ -195,6 +205,55 @@ async def get_item_dependencies(item_name: str):
         "dependencies": deps,
         "count": len(deps)
     }
+
+
+# Unified items endpoints
+
+@app.get("/api/items")
+async def list_items(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
+    q: str | None = Query(None, description="Optional search query"),
+    kind: str | None = Query(None, description="Filter by item kind")
+):
+    """Get paginated items from the unified items table."""
+    total = await get_item_count(query=q, kind=kind)
+    total_pages = max(1, ceil(total / page_size)) if total else 1
+    safe_page = min(page, total_pages)
+    offset = (safe_page - 1) * page_size
+    items = await get_items(limit=page_size, offset=offset, query=q, kind=kind)
+    return {
+        "items": items,
+        "total": total,
+        "page": safe_page,
+        "page_size": page_size,
+        "pages": total_pages,
+        "query": q,
+        "kind": kind
+    }
+
+
+@app.get("/api/items/{name}")
+async def read_item(name: str):
+    """Get a specific item by name."""
+    item = await get_item(name)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.post("/api/items")
+async def create_item(item: ItemCreate):
+    """Create a new item."""
+    try:
+        result = await add_item(
+            item.name,
+            item.kind,
+            item.source
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # Mount static files
