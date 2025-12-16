@@ -18,7 +18,7 @@ class AcornItem:
     name: str
     kind: str
     source: str  # Full source text
-    location: SourceLocation
+    location: Optional[SourceLocation] = None
     dependencies: Set[str] = field(default_factory=set)
 
     def qualified_name(self, module: str) -> str:
@@ -29,9 +29,9 @@ class AcornItem:
 @dataclass
 class Theorem(AcornItem):
     """Represents a theorem or axiom."""
-    head: str  # Theorem signature + head block
-    proof: str  # Proof body (empty for axioms)
-    raw: str  # Complete source including 'by' clause
+    head: str = ""  # Theorem signature + head block
+    proof: str = ""  # Proof body (empty for axioms)
+    raw: str = ""  # Complete source including 'by' clause
 
     def __post_init__(self):
         if not self.kind:
@@ -41,8 +41,8 @@ class Theorem(AcornItem):
 @dataclass
 class Definition(AcornItem):
     """Represents a define statement."""
-    signature: str  # Function signature
-    body: str  # Function body
+    signature: str = ""  # Function signature
+    body: str = ""  # Function body
     return_type: Optional[str] = None
 
 
@@ -59,7 +59,7 @@ class TypeClassMember:
 @dataclass
 class TypeClass(AcornItem):
     """Represents a typeclass definition."""
-    type_param: str  # The placeholder type parameter (e.g., "A")
+    type_param: str = "Self"  # The placeholder type parameter (e.g., "A")
     extends: List[str] = field(default_factory=list)  # Parent typeclasses
     members: List[TypeClassMember] = field(default_factory=list)
 
@@ -90,7 +90,7 @@ class Inductive(AcornItem):
 @dataclass
 class AttributesBlock(AcornItem):
     """Represents an attributes block for a type."""
-    target_type: str  # Type being extended
+    target_type: str = ""  # Type being extended
     members: List[Definition] = field(default_factory=list)
 
 

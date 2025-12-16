@@ -104,6 +104,8 @@ class AcornParser:
                 item, end_line = self._parse_attributes(lines, i, path)
                 if item:
                     items.append(item)
+                    # Also add attributes members as separate items
+                    items.extend(self._expand_attributes_members(item, path))
                 i = end_line + 1
                 continue
 
@@ -392,6 +394,19 @@ class AcornParser:
 
         return items
 
+    def _expand_attributes_members(self, attrs_block: AttributesBlock, path: Path) -> List[AcornItem]:
+        """Expand attributes block members into separate items.
+
+        Creates individual Definition items for each method in the attributes block.
+        """
+        items = []
+        for member in attrs_block.members:
+            # Update location to match parent block
+            member.location = attrs_block.location
+            items.append(member)
+
+        return items
+
     def _parse_structure(self, lines: List[str], start: int, path: Path) -> Tuple[Optional[Structure], int]:
         """Parse a structure definition."""
         line = lines[start]
@@ -505,16 +520,25 @@ class AcornParser:
         """Parse an attributes block."""
         line = lines[start]
 
-        match = re.match(r'attributes\s+([A-Z][A-Za-z0-9_<>\[\],\s]*?)\s*\{', line)
+        # Pattern: attributes TypeName[TypeParams] { or attributes T: TypeClass {
+        match = re.match(r'attributes\s+(?:([A-Z]):\s+)?([A-Z][A-Za-z0-9_<>\[\],\s]*?)\s*\{', line)
         if not match:
             return None, start
 
-        target_type = match.group(1).strip()
-        name = f"{target_type}_attributes"
+        type_param = match.group(1)  # Will be None for concrete types like Complex
+        target_type = match.group(2).strip()
+
+        # For typeclass constraints (e.g., "M: Monoid"), use the typeclass name
+        # For concrete types (e.g., "Complex"), use the type name
+        base_name = target_type if not type_param else target_type
+        name = f"{base_name}_attributes"
 
         brace_pos = line.find('{')
         try:
             body, end_line, _ = self._capture_block(lines, start, brace_pos + 1)
+
+            # Parse member definitions from body
+            members = self._parse_attributes_members(body, base_name)
 
             source_lines = [lines[i] for i in range(start, end_line + 1)]
             source = '\n'.join(source_lines).strip()
@@ -524,8 +548,63 @@ class AcornParser:
                 kind="attributes",
                 source=source,
                 location=SourceLocation(path, start + 1),
-                target_type=target_type,
+                target_type=base_name,
+                members=members,
             ), end_line
 
         except ValueError:
             return None, start
+
+    def _parse_attributes_members(self, body: str, target_type: str) -> List[Definition]:
+        """Parse define statements from attributes block."""
+        members = []
+        lines = body.split('\n')
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Skip comments and empty lines
+            if not stripped or stripped.startswith('///') or stripped.startswith('//'):
+                i += 1
+                continue
+
+            # Look for define statements
+            match = re.match(r'define\s+([a-z_][a-z0-9_]*)', stripped)
+            if match:
+                member_name = match.group(1)
+                qualified_name = f"{target_type}.{member_name}"
+
+                # Capture member body
+                member_lines = [line]
+                if '{' in line:
+                    brace_count = line.count('{') - line.count('}')
+                    j = i + 1
+                    while j < len(lines) and brace_count > 0:
+                        member_lines.append(lines[j])
+                        brace_count += lines[j].count('{') - lines[j].count('}')
+                        j += 1
+                    i = j
+                else:
+                    i += 1
+
+                member_source = '\n'.join(member_lines)
+
+                # Extract signature (everything before {)
+                sig_match = re.search(r'(define\s+[^{]+)', member_source)
+                signature = sig_match.group(1).strip() if sig_match else f"define {member_name}"
+
+                members.append(Definition(
+                    name=qualified_name,
+                    kind="attributes_method",
+                    source=member_source,
+                    location=None,  # Will be set by caller
+                    signature=signature,
+                    body=member_source.strip(),
+                ))
+                continue
+
+            i += 1
+
+        return members
