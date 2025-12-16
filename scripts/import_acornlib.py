@@ -13,11 +13,10 @@ from typing import List
 
 from acorn_mcp.database import (
     init_database,
-    add_theorem,
-    add_definition,
+    add_item,
 )
 from acorn_mcp.acorn import AcornParser
-from acorn_mcp.acorn.ast import AcornItem, Theorem, Definition, TypeClass
+from acorn_mcp.acorn.ast import AcornItem
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 ACORNLIB_SRC = ROOT_DIR / "acornlib" / "src"
@@ -57,9 +56,6 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         if '.' not in item.name:
             item.name = f"{module}.{item.name}"
 
-    thm_added = thm_skipped = thm_failed = 0
-    def_added = def_skipped = def_failed = 0
-
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
         # Count by type
@@ -71,69 +67,39 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
             print(f"  {kind}: {count}")
         return
 
-    # First pass: add all items
-    print("=== Importing theorems ===")
-    for item in items:
-        if isinstance(item, Theorem):
-            try:
-                await add_theorem(
-                    item.name,
-                    item.head,
-                    item.proof,
-                    item.raw,
-                    file_path=str(item.location.file.relative_to(ROOT_DIR)),
-                    line_number=item.location.line
-                )
-                thm_added += 1
-            except ValueError as e:
-                thm_skipped += 1
-                if "already exists" not in str(e):
-                    print(f"[skip] {item.name}: {e}")
-            except Exception as exc:
-                thm_failed += 1
-                print(f"[ERROR] Failed to add theorem {item.name} ({item.location.file}:{item.location.line}): {exc}", file=sys.stderr)
-
-    print(f"Theorems: added {thm_added}, skipped {thm_skipped}, failed {thm_failed}")
-
-    print("\n=== Importing definitions ===")
+    # Import all items into unified table
+    print("=== Importing items ===")
+    added = skipped = failed = 0
     failed_details = []
+
     for item in items:
-        if isinstance(item, Definition) or isinstance(item, TypeClass) or (not isinstance(item, Theorem)):
-            # For non-theorems, store as definitions
-            try:
-                # Build body text based on item type
-                if isinstance(item, Definition):
-                    body = item.source
-                else:
-                    body = item.source
+        try:
+            await add_item(
+                name=item.name,
+                kind=item.kind,
+                source=item.source,
+                file_path=str(item.location.file.relative_to(ROOT_DIR)),
+                line_number=item.location.line
+            )
+            added += 1
+        except ValueError as e:
+            skipped += 1
+            if "already exists" in str(e):
+                failed_details.append(f"  Duplicate: {item.name} ({item.location.file.name}:{item.location.line}) [kind={item.kind}]")
+            else:
+                failed_details.append(f"  ValueError: {item.name} - {e}")
+        except Exception as exc:
+            failed += 1
+            failed_details.append(f"  ERROR: {item.name} ({item.location.file.name}:{item.location.line}) [kind={item.kind}]: {exc}")
 
-                await add_definition(
-                    item.name,
-                    body,
-                    kind=item.kind,
-                    file_path=str(item.location.file.relative_to(ROOT_DIR)),
-                    line_number=item.location.line
-                )
-                def_added += 1
-            except ValueError as e:
-                def_skipped += 1
-                if "already exists" in str(e):
-                    failed_details.append(f"  Duplicate: {item.name} ({item.location.file.name}:{item.location.line}) [kind={item.kind}]")
-                else:
-                    failed_details.append(f"  ValueError: {item.name} - {e}")
-            except Exception as exc:
-                def_failed += 1
-                failed_details.append(f"  ERROR: {item.name} ({item.location.file.name}:{item.location.line}) [kind={item.kind}]: {exc}")
-
-    print(f"Definitions: added {def_added}, skipped {def_skipped}, failed {def_failed}")
-    if failed_details and (def_skipped > 0 or def_failed > 0):
+    print(f"Items: added {added}, skipped {skipped}, failed {failed}")
+    if failed_details and (skipped > 0 or failed > 0):
         print("\nSkipped/Failed details (showing first 10):")
         for detail in failed_details[:10]:
             print(detail)
 
     print(f"\n=== Summary ===")
-    print(f"Total theorems: {thm_added} added, {thm_skipped} skipped, {thm_failed} failed")
-    print(f"Total definitions: {def_added} added, {def_skipped} skipped, {def_failed} failed")
+    print(f"Total items: {added} added, {skipped} skipped, {failed} failed")
 
 
 def main(argv: List[str] | None = None) -> None:
