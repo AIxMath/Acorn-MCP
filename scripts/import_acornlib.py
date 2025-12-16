@@ -20,6 +20,10 @@ from acorn_mcp.database import (
     add_definition,
     add_dependency,
 )
+from acorn_mcp.type_inference import (
+    extract_theorem_dependencies,
+    extract_definition_dependencies,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 ACORNLIB_SRC = ROOT_DIR / "acornlib" / "src"
@@ -433,37 +437,40 @@ async def import_items(theorems: List[ParsedTheorem], definitions: List[ParsedDe
             all_item_names.add(dfn.name.split('.')[-1])
 
     for thm in theorems:
-        # Extract identifiers from theorem head and proof
-        all_text = f"{thm.head}\n{thm.proof}"
-        identifiers = _extract_identifiers(all_text)
+        # Use type inference to extract dependencies with operator resolution
+        try:
+            dependencies = extract_theorem_dependencies(thm.name, thm.head, thm.proof, thm.raw)
 
-        # Only add dependencies for identifiers that:
-        # 1. Match known items in our database, OR
-        # 2. Are qualified names (contain a dot)
-        for ident in identifiers:
-            if ident and ident != thm.name:
-                # Check if it's a known item or a qualified name
-                base_name = ident.split('.')[0] if '.' in ident else ident
-                if ident in all_item_names or base_name in all_item_names or '.' in ident:
-                    try:
-                        await add_dependency(thm.name, "theorem", ident, "uses")
-                        dep_added += 1
-                    except Exception:
-                        pass  # Silently skip dependency errors
+            for dep in dependencies:
+                if dep and dep != thm.name:
+                    # Check if it's a known item or a qualified name
+                    base_name = dep.split('.')[0] if '.' in dep else dep
+                    if dep in all_item_names or base_name in all_item_names or '.' in dep:
+                        try:
+                            await add_dependency(thm.name, "theorem", dep, "uses")
+                            dep_added += 1
+                        except Exception:
+                            pass  # Silently skip duplicate dependencies
+        except Exception as e:
+            # Don't let dependency extraction failures stop the import
+            print(f"[warn] Failed to extract dependencies for {thm.name}: {e}", file=sys.stderr)
 
     for dfn in definitions:
-        # Extract identifiers from definition body
-        identifiers = _extract_identifiers(dfn.body)
+        # Use type inference to extract dependencies
+        try:
+            dependencies = extract_definition_dependencies(dfn.name, dfn.body)
 
-        for ident in identifiers:
-            if ident and ident != dfn.name:
-                base_name = ident.split('.')[0] if '.' in ident else ident
-                if ident in all_item_names or base_name in all_item_names or '.' in ident:
-                    try:
-                        await add_dependency(dfn.name, "definition", ident, "uses")
-                        dep_added += 1
-                    except Exception:
-                        pass  # Silently skip dependency errors
+            for dep in dependencies:
+                if dep and dep != dfn.name:
+                    base_name = dep.split('.')[0] if '.' in dep else dep
+                    if dep in all_item_names or base_name in all_item_names or '.' in dep:
+                        try:
+                            await add_dependency(dfn.name, "definition", dep, "uses")
+                            dep_added += 1
+                        except Exception:
+                            pass  # Silently skip duplicate dependencies
+        except Exception as e:
+            print(f"[warn] Failed to extract dependencies for {dfn.name}: {e}", file=sys.stderr)
 
     print(f"Dependencies: added {dep_added} relationships")
     print(f"\n=== Summary ===")
