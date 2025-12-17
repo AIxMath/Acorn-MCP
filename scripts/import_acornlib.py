@@ -74,10 +74,15 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
 
     for item in items:
         try:
+            # Convert identifiers set to comma-separated string
+            identifiers_str = ','.join(sorted(item.identifiers)) if item.identifiers else None
+
             await add_item(
                 name=item.name,
                 kind=item.kind,
                 source=item.source,
+                uuid=item.uuid,
+                identifiers=identifiers_str,
                 file_path=str(item.location.file.relative_to(ROOT_DIR)),
                 line_number=item.location.line
             )

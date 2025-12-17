@@ -1,5 +1,6 @@
 """Parser for Acorn language source files."""
 import re
+import hashlib
 from pathlib import Path
 from typing import List, Tuple, Optional, Iterable
 from acorn_mcp.acorn.ast import (
@@ -26,6 +27,54 @@ class AcornParser:
             source_root: Root directory for computing module names
         """
         self.source_root = source_root
+        self.identifier_index = {}  # Maps names to items for linking
+
+    def _generate_uuid(self, name: str, file_path: Path) -> str:
+        """Generate a deterministic UUID for an item based on its qualified name and file."""
+        content = f"{file_path}::{name}"
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    def _extract_identifiers(self, source: str) -> set[str]:
+        """Extract all identifiers referenced in source code.
+
+        Returns identifiers like: Complex.add, Real.gt, AddGroup, etc.
+        """
+        identifiers = set()
+
+        # Pattern 1: Qualified identifiers (Type.member or module.Type.member)
+        # Examples: Complex.add, Real.0, int.Int.add
+        qualified_pattern = re.compile(r'\b([a-z_][a-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*(?:\.[a-z_A-Z][A-Za-z0-9_]*)+\b')
+        for match in qualified_pattern.finditer(source):
+            identifiers.add(match.group(0))
+
+        # Pattern 2: Type names (capitalized)
+        # Examples: Complex, Real, Int, AddGroup
+        type_pattern = re.compile(r'\b[A-Z][A-Za-z0-9_]*\b')
+        for match in type_pattern.finditer(source):
+            name = match.group(0)
+            # Skip common keywords
+            if name not in {'Bool', 'True', 'False'}:
+                identifiers.add(name)
+
+        # Pattern 3: Function/value names in qualified context
+        # Look for patterns like "Type.name" where we haven't caught it yet
+        member_pattern = re.compile(r'\b([A-Z][A-Za-z0-9_]*)\.([a-z_][A-Za-z0-9_]*)\b')
+        for match in member_pattern.finditer(source):
+            identifiers.add(match.group(0))  # Full qualified name
+
+        return identifiers
+
+    def _enrich_item(self, item: AcornItem, path: Path):
+        """Add UUID and extract identifiers for an item."""
+        # Generate UUID
+        if not item.uuid:
+            item.uuid = self._generate_uuid(item.name, path)
+
+        # Extract identifiers from source
+        item.identifiers = self._extract_identifiers(item.source)
+
+        # Add to index for later linking
+        self.identifier_index[item.name] = item
 
     def parse_file(self, path: Path) -> Tuple[List[AcornItem], List[ImportStatement]]:
         """Parse an Acorn source file.
@@ -120,6 +169,10 @@ class AcornParser:
                 continue
 
             i += 1
+
+        # Enrich all items with UUIDs and extracted identifiers
+        for item in items:
+            self._enrich_item(item, path)
 
         return items, imports
 

@@ -69,9 +69,11 @@ async def init_database():
                 """
                 CREATE TABLE IF NOT EXISTS items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uuid TEXT UNIQUE,
                     name TEXT NOT NULL UNIQUE,
                     kind TEXT NOT NULL,
                     source TEXT NOT NULL,
+                    identifiers TEXT,
                     file_path TEXT,
                     line_number INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -80,6 +82,7 @@ async def init_database():
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_name ON items(name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_uuid ON items(uuid)")
 
             # Keep legacy tables for backward compatibility and migration
             conn.execute(
@@ -140,22 +143,25 @@ async def init_database():
 # Unified items table functions
 
 async def add_item(name: str, kind: str, source: str,
+                   uuid: Optional[str] = None, identifiers: Optional[str] = None,
                    file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
     """Add a new item to the unified items table."""
     def _insert():
         conn = _connect()
         try:
             cursor = conn.execute(
-                """INSERT INTO items (name, kind, source, file_path, line_number)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (name, kind, source, file_path, line_number)
+                """INSERT INTO items (uuid, name, kind, source, identifiers, file_path, line_number)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (uuid, name, kind, source, identifiers, file_path, line_number)
             )
             conn.commit()
             return {
                 "id": cursor.lastrowid,
+                "uuid": uuid,
                 "name": name,
                 "kind": kind,
                 "source": source,
+                "identifiers": identifiers,
                 "file_path": file_path,
                 "line_number": line_number
             }

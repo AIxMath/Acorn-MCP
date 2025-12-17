@@ -20,6 +20,8 @@ class AcornItem:
     source: str  # Full source text
     location: Optional[SourceLocation] = None
     dependencies: Set[str] = field(default_factory=set)
+    identifiers: Set[str] = field(default_factory=set)  # Identifiers used in this item
+    uuid: Optional[str] = None  # Unique identifier for this item
 
     def qualified_name(self, module: str) -> str:
         """Get the fully qualified name."""
