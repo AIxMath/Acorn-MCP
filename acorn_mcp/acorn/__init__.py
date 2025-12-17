@@ -20,6 +20,11 @@ from acorn_mcp.acorn.ast import (
 )
 from acorn_mcp.acorn.parser import AcornParser
 from acorn_mcp.acorn.analyzer import DependencyAnalyzer
+from acorn_mcp.acorn.identifiers import (
+    IdentifierExtractor,
+    IdentifierInfo,
+    export_identifier_map,
+)
 
 __all__ = [
     'AcornItem',
@@ -33,4 +38,7 @@ __all__ = [
     'Instance',
     'AcornParser',
     'DependencyAnalyzer',
+    'IdentifierExtractor',
+    'IdentifierInfo',
+    'export_identifier_map',
 ]
