@@ -39,19 +39,21 @@ async def init_database():
                 CREATE TABLE IF NOT EXISTS items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     uuid TEXT UNIQUE,
-                    name TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
                     identifier_name TEXT,
                     kind TEXT NOT NULL,
                     source TEXT NOT NULL,
-                    file_path TEXT,
+                    file_path TEXT NOT NULL,
                     line_number INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(file_path, name)
                 )
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_name ON items(name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_uuid ON items(uuid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_file_path ON items(file_path)")
             conn.commit()
         finally:
             conn.close()

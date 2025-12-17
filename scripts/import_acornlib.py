@@ -49,17 +49,16 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         rel = item.location.file.relative_to(ACORNLIB_SRC).with_suffix("")
         return ".".join(rel.parts)
 
-    # Store original identifier names (no prefix) and build qualified names
+    # Extract simple identifier names (no module or typeclass prefix)
     for item in items:
-        module = get_module(item)
         # Store the original identifier name (no prefix)
+        # For typeclass-expanded items like "AddGroup.neg", extract just "neg"
         identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
         item.identifier_name = identifier_name
 
-        # Build fully qualified name for uniqueness (module.identifier)
-        # For typeclass-expanded items, name is already qualified
-        if '.' not in item.name:
-            item.name = f"{module}.{item.name}"
+        # Store only the simple identifier in name column
+        # Uniqueness is ensured by (file_path, name) composite constraint
+        item.name = identifier_name
 
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
