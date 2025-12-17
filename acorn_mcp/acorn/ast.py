@@ -22,6 +22,7 @@ class AcornItem:
     dependencies: Set[str] = field(default_factory=set)
     identifiers: Set[str] = field(default_factory=set)  # Identifiers used in this item
     uuid: Optional[str] = None  # Unique identifier for this item
+    identifier_name: Optional[str] = None  # Simple identifier name without module prefix
 
     def qualified_name(self, module: str) -> str:
         """Get the fully qualified name."""

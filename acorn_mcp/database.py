@@ -26,37 +26,6 @@ def _run_in_executor(fn):
     return loop.run_in_executor(DB_EXECUTOR, fn)
 
 
-def _ensure_raw_column(conn: sqlite3.Connection) -> None:
-    """Add raw column to theorems table if it is missing."""
-    cursor = conn.execute("PRAGMA table_info(theorems)")
-    columns = {row["name"] for row in cursor.fetchall()}
-    if "raw" not in columns:
-        conn.execute("ALTER TABLE theorems ADD COLUMN raw TEXT")
-        conn.execute("UPDATE theorems SET raw = theorem_head WHERE raw IS NULL")
-        conn.commit()
-
-
-def _ensure_metadata_columns(conn: sqlite3.Connection) -> None:
-    """Add metadata columns if missing."""
-    # Check theorems table
-    cursor = conn.execute("PRAGMA table_info(theorems)")
-    thm_cols = {row["name"] for row in cursor.fetchall()}
-    if "file_path" not in thm_cols:
-        conn.execute("ALTER TABLE theorems ADD COLUMN file_path TEXT")
-    if "line_number" not in thm_cols:
-        conn.execute("ALTER TABLE theorems ADD COLUMN line_number INTEGER")
-
-    # Check definitions table
-    cursor = conn.execute("PRAGMA table_info(definitions)")
-    def_cols = {row["name"] for row in cursor.fetchall()}
-    if "kind" not in def_cols:
-        conn.execute("ALTER TABLE definitions ADD COLUMN kind TEXT")
-    if "file_path" not in def_cols:
-        conn.execute("ALTER TABLE definitions ADD COLUMN file_path TEXT")
-    if "line_number" not in def_cols:
-        conn.execute("ALTER TABLE definitions ADD COLUMN line_number INTEGER")
-
-    conn.commit()
 
 
 async def init_database():
@@ -71,9 +40,9 @@ async def init_database():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     uuid TEXT UNIQUE,
                     name TEXT NOT NULL UNIQUE,
+                    identifier_name TEXT,
                     kind TEXT NOT NULL,
                     source TEXT NOT NULL,
-                    identifiers TEXT,
                     file_path TEXT,
                     line_number INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -83,56 +52,6 @@ async def init_database():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_name ON items(name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_items_uuid ON items(uuid)")
-
-            # Keep legacy tables for backward compatibility and migration
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS theorems (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    theorem_head TEXT NOT NULL,
-                    proof TEXT NOT NULL,
-                    raw TEXT,
-                    file_path TEXT,
-                    line_number INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS definitions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    definition TEXT NOT NULL,
-                    kind TEXT,
-                    file_path TEXT,
-                    line_number INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS dependencies (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_name TEXT NOT NULL,
-                    source_type TEXT NOT NULL,
-                    target_name TEXT NOT NULL,
-                    dependency_type TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(source_name, target_name, dependency_type)
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_dependencies_source ON dependencies(source_name)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_name)"
-            )
-            _ensure_raw_column(conn)
-            _ensure_metadata_columns(conn)
             conn.commit()
         finally:
             conn.close()
@@ -143,25 +62,25 @@ async def init_database():
 # Unified items table functions
 
 async def add_item(name: str, kind: str, source: str,
-                   uuid: Optional[str] = None, identifiers: Optional[str] = None,
+                   uuid: Optional[str] = None, identifier_name: Optional[str] = None,
                    file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
     """Add a new item to the unified items table."""
     def _insert():
         conn = _connect()
         try:
             cursor = conn.execute(
-                """INSERT INTO items (uuid, name, kind, source, identifiers, file_path, line_number)
+                """INSERT INTO items (uuid, name, identifier_name, kind, source, file_path, line_number)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (uuid, name, kind, source, identifiers, file_path, line_number)
+                (uuid, name, identifier_name, kind, source, file_path, line_number)
             )
             conn.commit()
             return {
                 "id": cursor.lastrowid,
                 "uuid": uuid,
                 "name": name,
+                "identifier_name": identifier_name,
                 "kind": kind,
                 "source": source,
-                "identifiers": identifiers,
                 "file_path": file_path,
                 "line_number": line_number
             }

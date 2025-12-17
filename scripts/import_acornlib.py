@@ -49,12 +49,19 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         rel = item.location.file.relative_to(ACORNLIB_SRC).with_suffix("")
         return ".".join(rel.parts)
 
-    # Build qualified names
+    # Store original identifier names (no prefix) and build qualified names
     for item in items:
         module = get_module(item)
+        # Store the original identifier name (no prefix)
+        identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
+        item.identifier_name = identifier_name
+
         # For typeclass-expanded items, name is already qualified
-        if '.' not in item.name:
-            item.name = f"{module}.{item.name}"
+        # Remove the module prefix from the name since it's already in file_path
+        if '.' in item.name:
+            # If name is already qualified, extract just the identifier part
+            item.name = identifier_name
+        # Don't add module prefix - it's redundant with file_path
 
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
@@ -74,15 +81,12 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
 
     for item in items:
         try:
-            # Convert identifiers set to comma-separated string
-            identifiers_str = ','.join(sorted(item.identifiers)) if item.identifiers else None
-
             await add_item(
                 name=item.name,
                 kind=item.kind,
                 source=item.source,
                 uuid=item.uuid,
-                identifiers=identifiers_str,
+                identifier_name=item.identifier_name,
                 file_path=str(item.location.file.relative_to(ROOT_DIR)),
                 line_number=item.location.line
             )
