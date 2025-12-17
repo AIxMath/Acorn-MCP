@@ -591,9 +591,8 @@ class AcornParser:
         type_param = match.group(1)  # Will be None for concrete types like Complex
         target_type = match.group(2).strip()
 
-        # For typeclass constraints (e.g., "M: Monoid"), use the typeclass name
-        # For concrete types (e.g., "Complex"), use the type name
-        base_name = target_type if not type_param else target_type
+        # Strip generic parameters from target type (e.g., "List[T]" -> "List")
+        base_name = re.sub(r'\[.*?\]', '', target_type)
         name = f"{base_name}_attributes"
 
         brace_pos = line.find('{')

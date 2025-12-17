@@ -49,16 +49,22 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         rel = item.location.file.relative_to(ACORNLIB_SRC).with_suffix("")
         return ".".join(rel.parts)
 
-    # Extract simple identifier names (no module or typeclass prefix)
+    # Process item names based on kind
     for item in items:
-        # Store the original identifier name (no prefix)
-        # For typeclass-expanded items like "AddGroup.neg", extract just "neg"
+        # Store the simple identifier name (last part after dot)
         identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
         item.identifier_name = identifier_name
 
-        # Store only the simple identifier in name column
-        # Uniqueness is ensured by (file_path, name) composite constraint
-        item.name = identifier_name
+        # For attributes members (methods/constants), keep the qualified name (Type.member)
+        # For other items, use only the simple identifier
+        if item.kind in ('attributes_method', 'attributes_constant'):
+            # Keep qualified name like "List.range" or "Nat.range"
+            # Name is already set correctly by parser
+            pass
+        else:
+            # Store only the simple identifier in name column
+            # Uniqueness is ensured by (file_path, name) composite constraint
+            item.name = identifier_name
 
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
