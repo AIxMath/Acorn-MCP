@@ -11,6 +11,7 @@ from acorn_mcp.database import (
     init_database,
     add_item,
     get_item,
+    get_item_by_uuid,
     get_item_count,
     get_items,
     add_theorem,
@@ -246,6 +247,15 @@ async def list_items(
 async def read_item(name: str):
     """Get a specific item by name."""
     item = await get_item(name)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+@app.get("/api/items/uuid/{uuid}")
+async def read_item_by_uuid(uuid: str):
+    """Get a specific item by UUID."""
+    item = await get_item_by_uuid(uuid)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return item

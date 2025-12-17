@@ -187,6 +187,20 @@ async def get_item(name: str) -> Optional[Dict]:
     return await _run_in_executor(_get)
 
 
+async def get_item_by_uuid(uuid: str) -> Optional[Dict]:
+    """Get an item by UUID."""
+    def _get():
+        conn = _connect()
+        try:
+            cursor = conn.execute("SELECT * FROM items WHERE uuid = ?", (uuid,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    return await _run_in_executor(_get)
+
+
 async def get_item_count(query: Optional[str] = None, kind: Optional[str] = None) -> int:
     """Return total number of items (optionally filtered)."""
     def _count():

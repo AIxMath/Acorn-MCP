@@ -212,8 +212,8 @@
             // Replace identifiers with links if they're known
             escaped = escaped.replace(identifierPattern, (match) => {
                 if (knownIdentifiers.has(match)) {
-                    // Create a clickable link that searches for the identifier
-                    return `<a href="?q=${encodeURIComponent(match)}" class="identifier-link" onclick="event.preventDefault(); searchFor('${escapeHtml(match)}');">${escapeHtml(match)}</a>`;
+                    // Create a clickable link that jumps to the identifier's detail page
+                    return `<a href="/item.html?name=${encodeURIComponent(match)}" class="identifier-link">${escapeHtml(match)}</a>`;
                 }
                 return match;
             });
@@ -241,7 +241,9 @@
                 <div class="item">
                     <div class="item-header">
                         <div style="flex: 1; min-width: 0;">
-                            <div class="item-title">${escapeHtml(item.name)}</div>
+                            <a href="/item.html?name=${encodeURIComponent(item.name)}" class="item-title" style="text-decoration: none; color: inherit; cursor: pointer;">
+                                ${escapeHtml(item.name)}
+                            </a>
                             <div class="item-meta">
                                 ${item.file_path ? `${escapeHtml(item.file_path)}` : ''}
                                 ${item.line_number ? `:${item.line_number}` : ''}

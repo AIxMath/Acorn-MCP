@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Item Details - Acorn MCP</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">Acorn MCP</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/browse.html" class="nav-link">Browse</a>
+                <a href="/create.html" class="nav-link">Create</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="content">
+        <div class="container">
+            <div id="loading" class="loading" style="padding: 4rem 0;">Loading item...</div>
+            <div id="error" style="display: none; padding: 4rem 0;">
+                <div class="empty-state">
+                    <h3 style="margin-bottom: 0.5rem; color: var(--error);">Item not found</h3>
+                    <p style="color: var(--text-muted);">The requested item could not be found.</p>
+                    <a href="/browse.html" class="btn btn-primary" style="margin-top: 1rem;">Back to Browse</a>
+                </div>
+            </div>
+            <div id="item-content" style="display: none;"></div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>Acorn MCP - Mathematical Knowledge Base</p>
+            <div class="footer-links">
+                <a href="/browse.html" class="footer-link">Browse</a>
+                <a href="/create.html" class="footer-link">Create</a>
+                <a href="/api/items?page=1&page_size=20" class="footer-link">API</a>
+            </div>
+        </div>
+    </footer>
+
+    <style>
+        .identifier-link {
+            color: var(--text-primary);
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .identifier-link:hover {
+            color: #666;
+            text-decoration-style: solid;
+        }
+
+        .item-detail {
+            padding: 2rem 0;
+        }
+
+        .item-detail-header {
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .item-detail-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            font-family: monospace;
+        }
+
+        .item-detail-meta {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .kind-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            border-radius: 6px;
+            font-family: monospace;
+        }
+
+        .kind-theorem { background: #1a1a1a; color: #fff; }
+        .kind-typeclass { background: #2a2a2a; color: #fff; }
+        .kind-structure { background: #3a3a3a; color: #fff; }
+        .kind-define { background: #4a4a4a; color: #fff; }
+        .kind-other { background: #5a5a5a; color: #fff; }
+
+        .identifier-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .identifier-tag {
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-default);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .identifier-tag:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--text-muted);
+        }
+    </style>
+
+    <script>
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function getKindLabel(kind) {
+            const labels = {
+                'theorem': 'Theorem',
+                'axiom': 'Axiom',
+                'typeclass': 'Typeclass',
+                'typeclass_method': 'TC Method',
+                'typeclass_axiom': 'TC Axiom',
+                'structure': 'Structure',
+                'inductive': 'Inductive',
+                'define': 'Definition',
+                'attributes_method': 'Attr Method',
+                'attributes_constant': 'Attr Constant',
+                'instance': 'Instance',
+                'instance_member': 'Instance Member'
+            };
+            return labels[kind] || kind;
+        }
+
+        function getKindBadgeClass(kind) {
+            if (kind.includes('theorem') || kind.includes('axiom')) return 'kind-theorem';
+            if (kind.includes('typeclass')) return 'kind-typeclass';
+            if (kind.includes('structure') || kind.includes('inductive')) return 'kind-structure';
+            if (kind.includes('define') || kind.includes('attributes') || kind.includes('instance')) return 'kind-define';
+            return 'kind-other';
+        }
+
+        function makeIdentifiersClickable(source, identifiers) {
+            if (!identifiers || identifiers.length === 0) {
+                return escapeHtml(source);
+            }
+
+            let escaped = escapeHtml(source);
+            const identSet = new Set(identifiers);
+
+            // Sort identifiers by length (longest first) to avoid partial matches
+            const sortedIdents = Array.from(identSet).sort((a, b) => b.length - a.length);
+
+            for (const ident of sortedIdents) {
+                // Create a regex that matches the identifier as a whole word
+                const regex = new RegExp(`\\b${ident.replace(/\./g, '\\.')}\\b`, 'g');
+                escaped = escaped.replace(regex, (match) => {
+                    return `<a href="?name=${encodeURIComponent(match)}" class="identifier-link" onclick="event.preventDefault(); loadItemByName('${escapeHtml(match)}');">${escapeHtml(match)}</a>`;
+                });
+            }
+
+            return escaped;
+        }
+
+        async function loadItemByName(name) {
+            window.location.href = `/item.html?name=${encodeURIComponent(name)}`;
+        }
+
+        async function loadItem() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const name = urlParams.get('name');
+            const uuid = urlParams.get('uuid');
+
+            if (!name && !uuid) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+
+            try {
+                const endpoint = uuid ? `/api/items/uuid/${encodeURIComponent(uuid)}` : `/api/items/${encodeURIComponent(name)}`;
+                const response = await fetch(endpoint);
+
+                if (!response.ok) {
+                    throw new Error('Item not found');
+                }
+
+                const item = await response.json();
+
+                // Parse identifiers from comma-separated string
+                const identifiers = item.identifiers ? item.identifiers.split(',') : [];
+
+                // Update page title
+                document.title = `${item.name} - Acorn MCP`;
+
+                // Render item
+                const kindBadgeClass = getKindBadgeClass(item.kind);
+                const kindLabel = getKindLabel(item.kind);
+                const sourceHtml = makeIdentifiersClickable(item.source, identifiers);
+
+                const html = `
+                    <div class="item-detail">
+                        <div class="item-detail-header">
+                            <div class="item-detail-title">${escapeHtml(item.name)}</div>
+                            <div class="item-detail-meta">
+                                <span class="kind-badge ${kindBadgeClass}">${kindLabel}</span>
+                                ${item.file_path ? `<span>${escapeHtml(item.file_path)}${item.line_number ? ':' + item.line_number : ''}</span>` : ''}
+                                ${item.uuid ? `<span style="font-family: monospace; font-size: 0.8rem;">UUID: ${escapeHtml(item.uuid)}</span>` : ''}
+                            </div>
+                        </div>
+
+                        <div class="code-section">
+                            <div class="code-label">Source</div>
+                            <pre class="code-block">${sourceHtml}</pre>
+                        </div>
+
+                        ${identifiers.length > 0 ? `
+                            <div style="margin-top: 2rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem; color: var(--text-secondary);">Used Identifiers (${identifiers.length})</div>
+                                <div class="identifier-list">
+                                    ${identifiers.map(id => `
+                                        <a href="?name=${encodeURIComponent(id)}" class="identifier-tag">${escapeHtml(id)}</a>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('item-content').style.display = 'block';
+                document.getElementById('item-content').innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading item:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        // Load item on page load
+        loadItem();
+    </script>
+</body>
+</html>
