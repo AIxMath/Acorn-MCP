@@ -57,6 +57,16 @@ class AcornParser:
                 i += 1
                 continue
 
+            # Parse instances
+            if stripped.startswith('instance '):
+                item, end_line = self._parse_instance(lines, i, path)
+                if item:
+                    items.append(item)
+                    # Also add instance members as separate items
+                    items.extend(self._expand_instance_members(item, path))
+                i = end_line + 1
+                continue
+
             # Parse theorems/axioms
             if stripped.startswith('theorem ') or stripped.startswith('axiom '):
                 item, end_line = self._parse_theorem(lines, i, path)
@@ -640,3 +650,119 @@ class AcornParser:
             i += 1
 
         return members
+
+    def _parse_instance(self, lines: List[str], start: int, path: Path) -> Tuple[Optional['Instance'], int]:
+        """Parse an instance statement."""
+        from acorn_mcp.acorn.ast import Instance
+        
+        line = lines[start]
+
+        # Pattern: instance TypeName: TypeClass { ... }
+        # or: instance TypeName: TypeClass (no body)
+        match = re.match(r'instance\s+([A-Z][A-Za-z0-9_]*):\s+([A-Z][A-Za-z0-9_]*)', line)
+        if not match:
+            return None, start
+
+        type_name = match.group(1)
+        typeclass_name = match.group(2)
+        name = f"{type_name}_{typeclass_name}_instance"
+
+        # Check if there's a body
+        if '{' not in line:
+            # No body instance (inherits everything)
+            return Instance(
+                name=name,
+                kind="instance",
+                source=line.strip(),
+                location=SourceLocation(path, start + 1),
+                type_name=type_name,
+                typeclass_name=typeclass_name,
+                members=[],
+            ), start
+
+        # Has body, parse it
+        brace_pos = line.find('{')
+        try:
+            body, end_line, _ = self._capture_block(lines, start, brace_pos + 1)
+
+            # Parse member let bindings from body
+            members = self._parse_instance_members(body, type_name, typeclass_name)
+
+            # Build source
+            source_lines = [lines[i] for i in range(start, end_line + 1)]
+            source = '\n'.join(source_lines).strip()
+
+            return Instance(
+                name=name,
+                kind="instance",
+                source=source,
+                location=SourceLocation(path, start + 1),
+                type_name=type_name,
+                typeclass_name=typeclass_name,
+                members=members,
+            ), end_line
+
+        except ValueError:
+            return None, start
+
+    def _parse_instance_members(self, body: str, type_name: str, typeclass_name: str) -> List[Definition]:
+        """Parse let bindings from instance body."""
+        members = []
+        lines = body.split('\n')
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Skip comments and empty lines
+            if not stripped or stripped.startswith('///') or stripped.startswith('//'):
+                i += 1
+                continue
+
+            # Look for let statements
+            # Pattern: let name: Type = value
+            let_match = re.match(r'let\s+([a-zA-Z0-9_]+)\s*:', stripped)
+            if let_match:
+                member_name = let_match.group(1)
+                # For instances, members bind to the type (e.g., Int.add from instance Int: AddSemigroup)
+                qualified_name = f"{type_name}.{member_name}"
+
+                # Capture until end of statement
+                member_lines = [line]
+                if '=' in line:
+                    # Continue collecting lines until we have a complete statement
+                    j = i + 1
+                    while j < len(lines) and not stripped.rstrip().endswith('}'):
+                        member_lines.append(lines[j])
+                        stripped = lines[j].strip()
+                        j += 1
+                        if not stripped or (j < len(lines) and not lines[j].strip()):
+                            break
+                    i = j
+                else:
+                    i += 1
+
+                member_source = '\n'.join(member_lines)
+
+                members.append(Definition(
+                    name=qualified_name,
+                    kind="instance_member",
+                    source=member_source,
+                    location=None,  # Will be set by caller
+                    signature=member_source.strip(),
+                    body=member_source.strip(),
+                ))
+                continue
+
+            i += 1
+
+        return members
+
+    def _expand_instance_members(self, instance: 'Instance', path: Path) -> List['AcornItem']:
+        """Expand instance members into separate items."""
+        items = []
+        for member in instance.members:
+            member.location = instance.location
+            items.append(member)
+        return items

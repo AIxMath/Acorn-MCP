@@ -95,6 +95,14 @@ class AttributesBlock(AcornItem):
 
 
 @dataclass
+class Instance(AcornItem):
+    """Represents a typeclass instance implementation."""
+    type_name: str = ""  # Type implementing the typeclass (e.g., "Int")
+    typeclass_name: str = ""  # Typeclass being implemented (e.g., "AddGroup")
+    members: List[Definition] = field(default_factory=list)  # let bindings in body
+
+
+@dataclass
 class ImportStatement:
     """Represents an import statement."""
     module: Optional[str]  # Module path for 'from module import ...'

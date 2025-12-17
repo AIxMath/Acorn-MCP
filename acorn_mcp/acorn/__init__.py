@@ -16,6 +16,7 @@ from acorn_mcp.acorn.ast import (
     Structure,
     Inductive,
     AttributesBlock,
+    Instance,
 )
 from acorn_mcp.acorn.parser import AcornParser
 from acorn_mcp.acorn.analyzer import DependencyAnalyzer
@@ -29,6 +30,7 @@ __all__ = [
     'Structure',
     'Inductive',
     'AttributesBlock',
+    'Instance',
     'AcornParser',
     'DependencyAnalyzer',
 ]
