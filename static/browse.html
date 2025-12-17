@@ -129,6 +129,20 @@
         .kind-structure { background: #3a3a3a; color: #fff; }
         .kind-define { background: #4a4a4a; color: #fff; }
         .kind-other { background: #5a5a5a; color: #fff; }
+
+        .identifier-link {
+            color: var(--text-primary);
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .identifier-link:hover {
+            color: #666;
+            text-decoration-style: solid;
+        }
     </style>
 
     <script>
@@ -180,6 +194,33 @@
             return 'kind-other';
         }
 
+        // Cache for known identifiers (populated from API)
+        let knownIdentifiers = new Set();
+
+        function makeIdentifiersClickable(source) {
+            if (knownIdentifiers.size === 0) {
+                return escapeHtml(source);
+            }
+
+            // Escape HTML first
+            let escaped = escapeHtml(source);
+
+            // Pattern to match qualified identifiers (e.g., Complex.add, AddGroup.neg)
+            // Also match simple identifiers at word boundaries
+            const identifierPattern = /\b([A-Z][A-Za-z0-9_]*(?:\.[a-z_][A-Za-z0-9_]*)*|[a-z_][a-z0-9_]*)\b/g;
+
+            // Replace identifiers with links if they're known
+            escaped = escaped.replace(identifierPattern, (match) => {
+                if (knownIdentifiers.has(match)) {
+                    // Create a clickable link that searches for the identifier
+                    return `<a href="?q=${encodeURIComponent(match)}" class="identifier-link" onclick="event.preventDefault(); searchFor('${escapeHtml(match)}');">${escapeHtml(match)}</a>`;
+                }
+                return match;
+            });
+
+            return escaped;
+        }
+
         function renderItem(item) {
             const kindBadgeClass = getKindBadgeClass(item.kind);
             const kindLabel = getKindLabel(item.kind);
@@ -189,6 +230,12 @@
             const source = item.source.length > maxSourceLength
                 ? item.source.substring(0, maxSourceLength) + '...'
                 : item.source;
+
+            // Add item name to known identifiers
+            knownIdentifiers.add(item.name);
+
+            // Make identifiers clickable in the source
+            const sourceHtml = makeIdentifiersClickable(source);
 
             return `
                 <div class="item">
@@ -205,10 +252,16 @@
                     </div>
 
                     <div class="code-section">
-                        <pre class="code-block">${escapeHtml(source)}</pre>
+                        <pre class="code-block">${sourceHtml}</pre>
                     </div>
                 </div>
             `;
+        }
+
+        function searchFor(identifier) {
+            currentQuery = identifier;
+            document.getElementById('search-input').value = identifier;
+            loadItems(1);
         }
 
         async function loadItems(page = 1) {
@@ -310,8 +363,33 @@
             }
         });
 
+        // Preload identifier index for linking
+        async function preloadIdentifiers() {
+            try {
+                // Fetch a sample of item names to populate the identifier cache
+                // We'll fetch the first 1000 items to build a reasonable index
+                const response = await fetch('/api/items?page=1&page_size=100');
+                const data = await response.json();
+
+                if (data.items) {
+                    data.items.forEach(item => {
+                        knownIdentifiers.add(item.name);
+                        // Also add simple name without module prefix for better matching
+                        const simpleName = item.name.split('.').pop();
+                        if (simpleName && simpleName.length > 2) { // Skip very short names
+                            knownIdentifiers.add(simpleName);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error preloading identifiers:', error);
+            }
+        }
+
         // Initial load
-        loadItems(1);
+        preloadIdentifiers().then(() => {
+            loadItems(1);
+        });
     </script>
 </body>
 </html>
