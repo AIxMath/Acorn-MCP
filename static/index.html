@@ -12,8 +12,7 @@
             <a href="/" class="nav-brand">Acorn MCP</a>
             <div class="nav-links">
                 <a href="/" class="nav-link active">Home</a>
-                <a href="/theorems.html" class="nav-link">Theorems</a>
-                <a href="/definitions.html" class="nav-link">Definitions</a>
+                <a href="/browse.html" class="nav-link">Browse</a>
                 <a href="/create.html" class="nav-link">Create</a>
             </div>
         </div>
@@ -32,11 +31,10 @@
                         mathematical knowledge
                     </h1>
                     <p style="font-size: 1.25rem; margin-bottom: 2.5rem; max-width: 700px;">
-                        Acorn MCP provides a clean, searchable database for theorems and definitions with full-text search, pagination, and a modern interface.
+                        Acorn MCP provides a clean, searchable database for theorems, definitions, typeclasses, and more with full-text search, filtering, and a modern interface.
                     </p>
                     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                        <a href="/theorems.html" class="btn btn-primary">Browse Theorems</a>
-                        <a href="/definitions.html" class="btn btn-secondary">Browse Definitions</a>
+                        <a href="/browse.html" class="btn btn-primary">Browse Library</a>
                         <a href="/create.html" class="btn btn-ghost">Add New Entry</a>
                     </div>
                 </div>
@@ -100,12 +98,12 @@
             <section style="padding: 4rem 0; text-align: center;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2rem; max-width: 900px; margin: 0 auto;">
                     <div>
-                        <div style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem;" id="theorem-count">-</div>
-                        <div style="color: var(--text-muted);">Theorems</div>
+                        <div style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem;" id="item-count">-</div>
+                        <div style="color: var(--text-muted);">Total Items</div>
                     </div>
                     <div>
-                        <div style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem;" id="definition-count">-</div>
-                        <div style="color: var(--text-muted);">Definitions</div>
+                        <div style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem;" id="theorem-count">-</div>
+                        <div style="color: var(--text-muted);">Theorems</div>
                     </div>
                     <div>
                         <div style="font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem;">∞</div>
@@ -122,10 +120,9 @@
                         Access the knowledge base programmatically with our REST API
                     </p>
                     <div style="display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;">
-                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">GET /api/theorems</code>
-                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">GET /api/definitions</code>
-                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">POST /api/theorems</code>
-                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">POST /api/definitions</code>
+                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">GET /api/items</code>
+                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">GET /api/items/{name}</code>
+                        <code style="padding: 0.75rem 1.25rem; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 8px; font-family: monospace;">POST /api/items</code>
                     </div>
                 </div>
             </section>
@@ -136,10 +133,9 @@
         <div class="container">
             <p>Acorn MCP - Mathematical Knowledge Base</p>
             <div class="footer-links">
-                <a href="/theorems.html" class="footer-link">Theorems</a>
-                <a href="/definitions.html" class="footer-link">Definitions</a>
+                <a href="/browse.html" class="footer-link">Browse</a>
                 <a href="/create.html" class="footer-link">Create</a>
-                <a href="/api/theorems?page=1&page_size=20" class="footer-link">API</a>
+                <a href="/api/items?page=1&page_size=20" class="footer-link">API</a>
             </div>
         </div>
     </footer>
@@ -148,16 +144,16 @@
         // Load stats
         async function loadStats() {
             try {
-                const [theoremsRes, definitionsRes] = await Promise.all([
-                    fetch('/api/theorems?page=1&page_size=1'),
-                    fetch('/api/definitions?page=1&page_size=1')
+                const [itemsRes, theoremsRes] = await Promise.all([
+                    fetch('/api/items?page=1&page_size=1'),
+                    fetch('/api/items?page=1&page_size=1&kind=theorem')
                 ]);
 
+                const itemsData = await itemsRes.json();
                 const theoremsData = await theoremsRes.json();
-                const definitionsData = await definitionsRes.json();
 
+                document.getElementById('item-count').textContent = itemsData.total || 0;
                 document.getElementById('theorem-count').textContent = theoremsData.total || 0;
-                document.getElementById('definition-count').textContent = definitionsData.total || 0;
             } catch (error) {
                 console.error('Error loading stats:', error);
             }

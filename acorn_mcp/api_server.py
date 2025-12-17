@@ -93,6 +93,15 @@ async def read_create_page():
     return FileResponse(str(create_file))
 
 
+@app.get("/browse.html")
+async def read_browse_page():
+    """Serve the unified browse page."""
+    browse_file = STATIC_DIR / "browse.html"
+    if not browse_file.exists():
+        raise HTTPException(status_code=404, detail="Browse page not found")
+    return FileResponse(str(browse_file))
+
+
 @app.get("/api/theorems")
 async def list_theorems(
     page: int = Query(1, ge=1),
