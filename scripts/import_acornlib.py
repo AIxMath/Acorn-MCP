@@ -55,10 +55,10 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
         item.identifier_name = identifier_name
 
-        # For attributes members (methods/constants), keep the qualified name (Type.member)
+        # For typeclass/attributes members, keep the qualified name (Type.member)
         # For other items, use only the simple identifier
-        if item.kind in ('attributes_method', 'attributes_constant'):
-            # Keep qualified name like "List.range" or "Nat.range"
+        if item.kind in ('attributes_method', 'attributes_constant', 'typeclass_method', 'typeclass_field', 'typeclass_axiom'):
+            # Keep qualified name like "List.range", "FiniteGroup.elements", etc.
             # Name is already set correctly by parser
             pass
         else:

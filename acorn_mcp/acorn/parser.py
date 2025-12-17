@@ -388,25 +388,39 @@ class AcornParser:
                 i += 1
                 continue
 
+            # Look for field declarations: name: Type
+            # Example: elements: List[G]
+            field_match = re.match(r'([a-z_][a-z0-9_]*)\s*:\s*([A-Za-z0-9_\[\],\s]+)$', stripped)
+            if field_match:
+                member_name = field_match.group(1)
+                member_type = field_match.group(2).strip()
+
+                members.append(TypeClassMember(
+                    name=member_name,
+                    kind="field",
+                    signature=f"{member_name}: {member_type}",
+                    body=None,
+                    source=stripped,
+                ))
+                i += 1
+                continue
+
             # Look for member definition: name(params) { body }
             # or axiom: name(params: Type) { constraint }
-            match = re.match(r'([a-z_][a-z0-9_]*)\s*(?:\(([^)]*)\))?\s*(?:\{|:)', stripped)
+            match = re.match(r'([a-z_][a-z0-9_]*)\s*(?:\(([^)]*)\))?\s*\{', stripped)
             if match:
                 member_name = match.group(1)
                 params = match.group(2) or ""
 
-                # Capture until end of member (find matching brace or semicolon)
+                # Capture until end of member (find matching brace)
                 member_lines = [line]
-                if '{' in line:
-                    brace_count = line.count('{') - line.count('}')
-                    j = i + 1
-                    while j < len(lines) and brace_count > 0:
-                        member_lines.append(lines[j])
-                        brace_count += lines[j].count('{') - lines[j].count('}')
-                        j += 1
-                    i = j
-                else:
-                    i += 1
+                brace_count = line.count('{') - line.count('}')
+                j = i + 1
+                while j < len(lines) and brace_count > 0:
+                    member_lines.append(lines[j])
+                    brace_count += lines[j].count('{') - lines[j].count('}')
+                    j += 1
+                i = j
 
                 member_source = '\n'.join(member_lines)
 
@@ -443,6 +457,15 @@ class AcornParser:
                     location=typeclass.location,
                     signature=member.signature,
                     body=member.body or "",
+                ))
+            elif member.kind == "field":
+                items.append(Definition(
+                    name=qualified_name,
+                    kind="typeclass_field",
+                    source=member.source,
+                    location=typeclass.location,
+                    signature=member.signature,
+                    body="",
                 ))
             else:  # axiom
                 items.append(Theorem(
