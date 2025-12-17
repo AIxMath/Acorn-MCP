@@ -56,12 +56,10 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
         item.identifier_name = identifier_name
 
+        # Build fully qualified name for uniqueness (module.identifier)
         # For typeclass-expanded items, name is already qualified
-        # Remove the module prefix from the name since it's already in file_path
-        if '.' in item.name:
-            # If name is already qualified, extract just the identifier part
-            item.name = identifier_name
-        # Don't add module prefix - it's redundant with file_path
+        if '.' not in item.name:
+            item.name = f"{module}.{item.name}"
 
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
