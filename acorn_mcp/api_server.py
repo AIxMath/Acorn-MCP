@@ -243,11 +243,18 @@ async def list_items(
     }
 
 
-@app.get("/api/items/{name}")
+@app.get("/api/items/{name:path}")
 async def read_item(name: str):
-    """Get a specific item by name."""
+    """Get a specific item by name (supports qualified names with dots)."""
     item = await get_item(name)
     if not item:
+        # Try to find by partial match (simple name without module)
+        simple_name = name.split('.')[-1]
+        items = await get_items(limit=10, offset=0, query=simple_name)
+        # Find exact match on simple name
+        for candidate in items:
+            if candidate['name'].endswith('.' + simple_name) or candidate['name'] == simple_name:
+                return candidate
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 

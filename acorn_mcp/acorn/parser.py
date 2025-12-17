@@ -111,8 +111,8 @@ class AcornParser:
                 item, end_line = self._parse_instance(lines, i, path)
                 if item:
                     items.append(item)
-                    # Also add instance members as separate items
-                    items.extend(self._expand_instance_members(item, path))
+                    # Don't expand instance members - they're just bindings to existing items
+                    # items.extend(self._expand_instance_members(item, path))
                 i = end_line + 1
                 continue
 
