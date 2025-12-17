@@ -250,12 +250,20 @@ async def read_item(name: str):
     if not item:
         # Try to find by partial match (simple name without module)
         simple_name = name.split('.')[-1]
-        items = await get_items(limit=10, offset=0, query=simple_name)
-        # Find exact match on simple name
+
+        # First try: search for items where the full name ends with the query
+        items = await get_items(limit=100, offset=0, query=name)
+
+        # Find exact match or best match on simple name
         for candidate in items:
+            # Exact match on full name
+            if candidate['name'] == name:
+                return candidate
+            # Match on simple name
             if candidate['name'].endswith('.' + simple_name) or candidate['name'] == simple_name:
                 return candidate
-        raise HTTPException(status_code=404, detail="Item not found")
+
+        raise HTTPException(status_code=404, detail=f"Item not found: {name}")
     return item
 
 
