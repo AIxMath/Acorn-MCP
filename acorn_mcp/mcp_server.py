@@ -132,6 +132,24 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["source"]
             }
+        Tool(
+            name="search_theorems",
+            description="Find top similar theorems/axioms by keyword match on name/source/raw. Use for theorem search by description.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "desired_theorem": {
+                        "type": "str",
+                        "description": "Description or statement of desired theorem"
+                    },
+                    "limit": {
+                        "type": "int",
+                        "default": 5,
+                        "description": "Number of top results (default 5)"
+                    }
+                },
+                "required": ["desired_theorem"]
+            }
         )
     ]
 
@@ -216,7 +234,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=pretty
             )]
-        
+
+        elif name == "search_theorems":
+            from .database import search_theorems
+            result = await search_theorems(
+                arguments["desired_theorem"],
+                arguments.get("limit", 5)
+            )
+            return [TextContent(
+                type="text",
+                text=json.dumps(result, indent=2)
+            )]
+
         else:
             return [TextContent(
                 type="text",

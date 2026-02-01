@@ -198,6 +198,122 @@ async def get_all_items() -> List[Dict]:
     return await _run_in_executor(_list_all)
 
 
+async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
+    \"\"\"Search for theorems/axioms using TF-IDF, Jaccard, tree edit distance on Lark-parsed head AST token seq.\"\"\"
+    import re
+    from collections import Counter, defaultdict
+    from difflib import SequenceMatcher
+    from pathlib import Path
+    from lark import Lark, Tree, Token
+    from typing import List, Dict, Any
+
+    ROOT_DIR = Path(__file__).resolve().parent.parent
+    grammar_path = ROOT_DIR / \"acorn_mcp\" / \"acorn\" / \"acorn.lark\"
+    lark_parser = Lark(grammar_path.read_text(), parser=\"lalr\", propagate_positions=False)
+
+    def flatten_tree(node: Any) -> List[str]:
+        \"\"\"Preorder token seq from Lark tree (labels + leaves).\"\"\"
+        if isinstance(node, Token):
+            return [node.value]
+        seq = [node.data]
+        for child in node.children:
+            seq += flatten_tree(child)
+        return seq
+
+    def get_head_ast_seq(raw: str) -> List[str]:
+        \"\"\"Parse raw → theorem head expr tree → flatten token seq.\"\"\"
+        try:
+            tree = lark_parser.parse(raw)
+            for stmt in tree.children:
+                if stmt.data == 'theorem_decl':
+                    # Find head expr after first {
+                    brace_count = 0
+                    for i, child in enumerate(stmt.children):
+                        if isinstance(child, Token) and child.value == '{':
+                            brace_count += 1
+                            if brace_count == 1:
+                                head_tree = stmt.children[i+1] if i+1 < len(stmt.children) else None
+                                if head_tree:
+                                    seq = flatten_tree(head_tree)
+                                    # Normalize generics/stop
+                                    stop = {'theorem', 'axiom', 'let', 'define', 'if', 'else', 'match', 'forall', 'exists', 'and', 'or', 'not', 'implies', 'suc', 'self', 'other', 'pred', '{', '}', '(', ')', ':', '->', ',', 'true', 'false'}
+                                    generics = re.findall(r'^[A-Z]$', ''.join(seq))
+                                    gen_map = {g: f'#GEN{i+1}' for i, g in enumerate(set(generics))}
+                                    norm_seq = []
+                                    for t in seq:
+                                        if t in gen_map:
+                                            norm_seq.append(gen_map[t])
+                                        elif t not in stop and re.match(r'^[a-z_][a-z0-9_]*$', t) and len(t) > 1:
+                                            norm_seq.append(t.lower())
+                                    return norm_seq
+            return []
+        except:
+            # Fallback regex words
+            head = re.search(r'theorem\\s+[^\\{]*\\{([^}]*?)(?=\\s+by\\s*\\{|$)', raw, re.DOTALL)
+            head_text = head.group(1).strip() if head else raw
+            words = re.findall(r'\\b[a-z_][a-z0-9_]*\\b', head_text.lower())
+            stop = {'theorem', 'axiom', 'let', 'define', 'if', 'else', 'match', 'forall', 'exists', 'and', 'or', 'not', 'implies', 'suc', 'self', 'other', 'pred', 'nat'}
+            return [w for w in words if w not in stop and len(w) > 1]
+
+    def jaccard_sim(q_seq: List[str], doc_seq: List[str]) -> float:
+        q_set = set(q_seq)
+        doc_set = set(doc_seq)
+        inter = q_set & doc_set
+        union = q_set | doc_set
+        return len(inter) / len(union) if union else 0.0
+
+    def simple_tfidf_cosine(q_vec: Counter, doc_vec: Counter, df: Dict[str, int], N: int) -> float:
+        q_tf = {w: freq * (1 + 1 / (df.get(w, 1) or 1)) for w, freq in q_vec.items()}
+        doc_tf = {w: freq * (1 + 1 / (df.get(w, 1) or 1)) for w, freq in doc_vec.items()}
+        dot = sum(q_tf.get(w, 0) * doc_tf.get(w, 0) for w in set(q_tf) | set(doc_tf))
+        q_norm = sum(v**2 for v in q_tf.values()) ** 0.5
+        doc_norm = sum(v**2 for v in doc_tf.values()) ** 0.5
+        return dot / (q_norm * doc_norm) if q_norm and doc_norm else 0.0
+
+    def _search():
+        conn = _connect()
+        try:
+            cursor = conn.execute(\"SELECT * FROM items WHERE kind IN ('theorem', 'axiom')\")
+            candidates = [dict(row) for row in cursor.fetchall()]
+            if not candidates:
+                return []
+
+            q_seq = get_head_ast_seq(q)
+            q_words = q_seq  # seq is words already
+            q_vec = Counter(q_seq)
+            N = len(candidates)
+
+            df = defaultdict(int)
+            doc_seqs = []
+            docs = []
+            for doc in candidates:
+                doc_seq = get_head_ast_seq(doc['source'])
+                docs.append(doc)
+                doc_vec = Counter(doc_seq)
+                doc_words_set = set(doc_seq)
+                for w in doc_words_set:
+                    df[w] += 1
+                doc_seqs.append(doc_vec)
+
+            scores = []
+            for i, doc in enumerate(docs):
+                doc_seq = get_head_ast_seq(doc['source'])
+                doc_vec = doc_seqs[i]
+
+                jacc = jaccard_sim(q_seq, doc_seq)
+                tfidf = simple_tfidf_cosine(q_vec, doc_vec, df, N)
+                tree_edit = SequenceMatcher(None, ' '.join(q_seq), ' '.join(doc_seq)).ratio()
+
+                avg_score = (jacc + tfidf + tree_edit) / 3
+                scores.append((avg_score, doc))
+
+            top = sorted(scores, reverse=True, key=lambda x: x[0])[:limit]
+            return [{'score': score, **item} for score, item in top]
+        finally:
+            conn.close()
+    return await _run_in_executor(_search)
+
+
 # Legacy theorem/definition functions (kept for backward compatibility)
 
 async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
