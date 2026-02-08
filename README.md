@@ -25,6 +25,8 @@ The project consists of three main components:
 2. **MCP Server** (`acorn_mcp/mcp_server.py`): Model Context Protocol server that LLMs can use to access the knowledge base
 3. **API Server** (`acorn_mcp/api_server.py`): FastAPI backend providing REST endpoints for the web interface
 4. **Frontend** (`static/index.html`): Interactive web interface for viewing and managing content
+5. **Syntax Checker** (`acorn_mcp/syntax_checker.py`): Lightweight syntax validation for Acorn code
+6. **Code Verifier** (`acorn_mcp/code_verifier.py`): Acorn compiler integration for logical verification
 
 ## Installation
 
@@ -123,6 +125,7 @@ The MCP server provides the following tools for LLMs:
 - `list_definitions`: List all definitions
 - `get_acorn_syntax`: Return the condensed Acorn syntax reference
 - `check_acorn_syntax`: Validate a snippet of Acorn code and report issues
+- `verify_acorn_code`: Verify Acorn code logic using the Acorn compiler
 
 ### Importer coverage
 
@@ -143,6 +146,14 @@ The FastAPI server provides the following endpoints:
 - `GET /api/definitions`: List all definitions (pagination via `page`/`page_size`, filter with `q`)
 - `GET /api/definitions/{name}`: Get a specific definition
 - `POST /api/definitions`: Create a new definition
+
+**Code Validation:**
+- `POST /api/syntax/check`: Check Acorn syntax
+  - Request body: `{"source": "acorn code"}`
+  - Response: `{"is_valid": bool, "errors": [...], "warnings": [...]}`
+- `POST /api/code/verify`: Verify code with Acorn compiler
+  - Request body: `{"source": "acorn code"}`
+  - Response: `{"is_valid": bool, "errors": [...], "compiler_available": bool}`
 
 ## Database Schema
 

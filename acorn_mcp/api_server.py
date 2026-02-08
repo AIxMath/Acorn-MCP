@@ -25,6 +25,8 @@ from acorn_mcp.database import (
     get_dependencies,
 )
 from acorn_mcp.export import export_ordered, export_acorn_file
+from acorn_mcp.syntax_checker import check_syntax
+from acorn_mcp.code_verifier import check_verification
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -40,6 +42,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Acorn MCP API", lifespan=lifespan)
 
+# CORS Configuration: Enable cross-origin requests
+# This allows future front-end applications (e.g., React/Vue running on different port)
+# to call this API without browser CORS errors
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Pydantic models for request validation
 class TheoremCreate(BaseModel):
     name: str
@@ -53,9 +68,22 @@ class DefinitionCreate(BaseModel):
     definition: str
 
 
+# WARNING: GHOST DATA RISK!
+# Do NOT use the /api/items endpoint to create theorems or definitions for Formalizer.
+# Use /api/theorems and /api/definitions instead.
+# Reason: /api/theorems queries the 'theorems' table, NOT the 'items' table.
+# Data created via /api/items will be invisible to search_theorems/search_definitions.
 class ItemCreate(BaseModel):
     name: str
     kind: str
+    source: str
+
+
+class SyntaxCheckRequest(BaseModel):
+    source: str
+
+
+class CodeVerifyRequest(BaseModel):
     source: str
 
 
@@ -288,6 +316,28 @@ async def create_item(item: ItemCreate):
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/syntax/check")
+async def check_syntax_endpoint(request: SyntaxCheckRequest):
+    """Check Acorn source code for syntax errors.
+    
+    Returns:
+        Dictionary with keys: is_valid, errors, warnings
+    """
+    result = check_syntax(request.source)
+    return result
+
+
+@app.post("/api/code/verify")
+async def verify_code_endpoint(request: CodeVerifyRequest):
+    """Verify Acorn code using the Acorn compiler.
+    
+    Returns:
+        Dictionary with keys: is_valid, errors, compiler_available
+    """
+    result = check_verification(request.source)
+    return result
 
 
 # Mount static files

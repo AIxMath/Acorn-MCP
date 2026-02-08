@@ -14,6 +14,7 @@ from acorn_mcp.database import (
     get_all_definitions
 )
 from acorn_mcp.syntax_checker import load_syntax_reference, check_syntax
+from acorn_mcp.code_verifier import check_verification
 
 # Create MCP server instance
 app = Server("acorn-mcp")
@@ -132,6 +133,20 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["source"]
             }
+        ),
+        Tool(
+            name="verify_acorn_code",
+            description="Verify Acorn code logic using the Acorn compiler",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Acorn code to verify"
+                    }
+                },
+                "required": ["source"]
+            }
         )
     ]
 
@@ -211,6 +226,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         elif name == "check_acorn_syntax":
             report = check_syntax(arguments["source"])
+            pretty = json.dumps(report, indent=2)
+            return [TextContent(
+                type="text",
+                text=pretty
+            )]
+        
+        elif name == "verify_acorn_code":
+            report = check_verification(arguments["source"])
             pretty = json.dumps(report, indent=2)
             return [TextContent(
                 type="text",
