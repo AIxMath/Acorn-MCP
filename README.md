@@ -41,79 +41,84 @@ cd Acorn-MCP
 pip install -r requirements.txt
 ```
 
-## Usage
+## End-to-end Setup
 
-### Running the Web Interface
+### 1. Install Dependencies
 
-Start the FastAPI server:
-```bash
-python -m acorn_mcp.api_server
-```
-
-Then open your browser to `http://localhost:8000` to access the web interface.
-
-### Running the MCP Server
-
-The MCP server allows LLMs to interact with the theorem and definition databases:
-```bash
-python -m acorn_mcp.mcp_server
-```
-
-The MCP server communicates via stdio and can be integrated with LLM clients that support the Model Context Protocol.
-
-### Importing the Acorn standard library into the database
-
-Parse all `.ac` files in `acornlib/src` and insert the discovered theorems/definitions:
-```bash
-python -m scripts.import_acornlib
-```
-Add `--dry-run` to see counts without writing.
-
-### End-to-end setup (detailed)
-
-1) Install dependencies (optionally in a virtualenv):
+Optionally use a virtual environment:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) (Optional) Pre-populate the DB from the bundled `acornlib` checkout:
+### 2. Download Acorn Standard Library
+
+The `acornlib` directory contains the Acorn standard library (theorems, definitions, and basic types):
 ```bash
-python -m scripts.import_acornlib --dry-run   # inspect counts
-python -m scripts.import_acornlib             # write to acorn_mcp.db
+# Clone the acornlib repository
+git clone https://github.com/acornprover/acornlib.git
 ```
 
-3) Start the web/API server (serves the UI at `/` and JSON at `/api/*`):
+> **Note**: Place `acornlib` in the same directory as this project, or set the `ACORN_LIB_PATH` environment variable to point to it.
+
+### 3. Install Acorn Compiler
+
+The code verification feature requires the Acorn compiler. Install it using the provided script:
+```bash
+bash scripts/install-acorn.sh
+```
+
+This will:
+- Download the latest Acorn binary for Linux
+- Install it to `~/.local/bin/acorn`
+- Verify the installation
+
+> **Important**: Ensure `~/.local/bin` is in your `PATH`. Add this to your `~/.bashrc` or `~/.zshrc`:
+> ```bash
+> export PATH="$HOME/.local/bin:$PATH"
+> ```
+
+Verify installation:
+```bash
+acorn --version
+```
+
+### 4. Pre-populate Database (Optional)
+
+Import theorems and definitions from `acornlib`:
+```bash
+python -m scripts.import_acornlib --dry-run   # Preview what will be imported
+python -m scripts.import_acornlib             # Write to acorn_mcp.db
+```
+
+This parses all `.ac` files in `acornlib/src` and imports:
+- **Theorems**: `theorem` blocks (statement + proof) and `axiom` blocks
+- **Definitions**: `define`, `inductive`, `structure`, and `typeclass` blocks
+
+### 5. Start API Server
+
+Start the FastAPI server (serves web UI at `/` and REST API at `/api/*`):
 ```bash
 python -m acorn_mcp.api_server
 ```
-Visit `http://localhost:8000` to add/list theorems and definitions.
 
-4) Start the MCP server (stdio) in another terminal if you want MCP integration:
+The server will start on `http://localhost:8000`. Open your browser to:
+- **Web Interface**: `http://localhost:8000` - Browse and add theorems/definitions
+- **API Documentation**: `http://localhost:8000/docs` - Interactive API docs
+
+### 6. Start MCP Server (Optional)
+
+For LLM integration via Model Context Protocol, start the MCP server in a separate terminal:
 ```bash
 python -m acorn_mcp.mcp_server
 ```
-The MCP server exposes the tool list below for clients.
 
-### Running the MCP Server
+The MCP server communicates via stdio and exposes tools for LLM clients (see [Available MCP Tools](#available-mcp-tools) below).
 
-The MCP server allows LLMs to interact with the theorem and definition databases:
-```bash
-python -m acorn_mcp.mcp_server
-```
-
-The MCP server communicates via stdio and can be integrated with LLM clients that support the Model Context Protocol.
-
-### Importing the Acorn standard library into the database
-
-Parse all `.ac` files in `acornlib/src` and insert the discovered theorems/definitions:
-```bash
-python -m scripts.import_acornlib
-```
-Add `--dry-run` to see counts without writing.
 
 ### Available MCP Tools
+
 
 The MCP server provides the following tools for LLMs:
 
