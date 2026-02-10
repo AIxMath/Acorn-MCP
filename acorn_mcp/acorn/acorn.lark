@@ -1,0 +1,95 @@
+%import common.WS
+%import common.NL
+%ignore WS
+%ignore /\/\*[\s\S]*?\*\//
+%ignore /\/\/.*$/
+%ignore /\/\/\/.*$/
+
+start: statement*
+
+statement: import_stmt
+        | numerals_stmt
+        | inductive_decl
+        | structure_decl
+        | typeclass_decl
+        | attributes_block
+        | theorem_decl
+        | define_stmt
+        | let_stmt
+        | instance_decl
+        | NL
+
+import_stmt: "import" module_name
+           | "from" module_name "import" ID ("," ID)*
+module_name: LOWER_ID ("/" LOWER_ID)*
+
+numerals_stmt: "numerals" PASCAL_ID
+
+inductive_decl: "inductive" PASCAL_ID type_params? "{" constructor* "}"
+
+structure_decl: "structure" PASCAL_ID type_params? "{" field_decl* constraint? "}"
+
+typeclass_decl: "typeclass" type_param? ":" PASCAL_ID ("extends" PASCAL_ID ("," PASCAL_ID)*)? "{" typeclass_member* "}"
+
+attributes_block: "attributes" target_type "{" attr_member* "}"
+
+theorem_decl: ("theorem" | "axiom") theorem_sig? "{" expr "}" ("by" "{" proof "}")?
+
+define_stmt: "define" LOWER_ID param_list? "->" type "{" expr "}"
+
+let_stmt: let_simple
+        | let_satisfy
+
+let_simple: "let" ID ":" type "=" expr
+
+let_satisfy: "let" ID ":" type "satisfy" "{" expr "}"
+
+instance_decl: "instance" PASCAL_ID ":" PASCAL_ID ("{" attr_member* "}")?
+
+type_params: "[" ID ("," ID)* "]"
+
+constructor: LOWER_ID param_list?
+
+field_decl: LOWER_ID ":" type
+
+typeclass_member: field_decl
+                | "op" LOWER_ID ":" sig_type
+                | LOWER_ID param_list? "{" expr "}"
+
+target_type: PASCAL_ID | type_param ":" PASCAL_ID
+
+attr_member: let_stmt | define_stmt
+
+param_list: "(" param ("," param)* ")"
+
+param: LOWER_ID ":" type
+
+sig_type: "(" type "," type ")" "->" type
+
+type: type_atom ("." PASCAL_ID)?
+
+type_atom: PASCAL_ID type_params? | "(" type ")"
+
+expr: atom (op atom)*
+atom: NUMBER
+    | "true" | "false"
+    | ID
+    | "(" expr ")"
+    | "if" expr "{" expr "}" "else" "{" expr "}"
+    | "match" expr "{" case* "}"
+    | "forall" "(" LOWER_ID ":" type ")" "{" expr "}"
+    | "exists" "(" LOWER_ID ":" type ")" "{" expr "}"
+
+case: PASCAL_ID param_list? "{" expr "}"
+
+op: "+" | "-" | "*" | "/" | "%" | "and" | "or" | "implies" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "not"
+
+constraint: expr
+
+proof: expr
+
+ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+PASCAL_ID: /[A-Z][a-zA-Z0-9_]*/
+LOWER_ID: /[a-z_][a-z0-9_]*/
+NUMBER: /\d+/
+NL: /\n+/
