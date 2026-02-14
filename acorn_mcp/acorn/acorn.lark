@@ -33,6 +33,8 @@ typeclass_decl: "typeclass" type_param? ":" PASCAL_ID ("extends" PASCAL_ID ("," 
 
 attributes_block: "attributes" target_type "{" attr_member* "}"
 
+theorem_sig: LOWER_ID type_params? param_list?
+
 theorem_decl: ("theorem" | "axiom") theorem_sig? "{" expr "}" ("by" "{" proof "}")?
 
 define_stmt: "define" LOWER_ID param_list? "->" type "{" expr "}"
@@ -47,6 +49,8 @@ let_satisfy: "let" ID ":" type "satisfy" "{" expr "}"
 instance_decl: "instance" PASCAL_ID ":" PASCAL_ID ("{" attr_member* "}")?
 
 type_params: "[" ID ("," ID)* "]"
+type_param: ID
+
 
 constructor: LOWER_ID param_list?
 

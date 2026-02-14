@@ -181,10 +181,56 @@ async def add_item(name: str, kind: str, source: str,
 
 
 async def get_item(name: str) -> Optional[Dict]:
-    """Get an item by name."""
+    """Get an item by name.
+    
+    Searches across theorems, definitions, and items tables in that order.
+    Returns the first match found, formatted as a unified item schema.
+    """
     def _get():
         conn = _connect()
         try:
+            # Try theorems first
+            cursor = conn.execute("SELECT * FROM theorems WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            if row:
+                item = dict(row)
+                # Map to unified schema
+                return {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "kind": "theorem",
+                    "source": item["raw"],
+                    "uuid": None,
+                    "identifier_name": None,
+                    "file_path": item.get("file_path"),
+                    "line_number": item.get("line_number"),
+                    "created_at": item["created_at"],
+                    # Preserve theorem-specific fields
+                    "theorem_head": item.get("theorem_head"),
+                    "proof": item.get("proof"),
+                    "raw": item.get("raw")
+                }
+            
+            # Try definitions
+            cursor = conn.execute("SELECT * FROM definitions WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            if row:
+                item = dict(row)
+                return {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "kind": item.get("kind", "definition"),
+                    "source": item["definition"],
+                    "uuid": None,
+                    "identifier_name": None,
+                    "file_path": item.get("file_path"),
+                    "line_number": item.get("line_number"),
+                    "created_at": item["created_at"],
+                    # Preserve definition-specific field
+                    "definition": item.get("definition")
+                }
+            
+            # Try items table
             cursor = conn.execute("SELECT * FROM items WHERE name = ?", (name,))
             row = cursor.fetchone()
             return dict(row) if row else None
@@ -209,7 +255,10 @@ async def get_item_by_uuid(uuid: str) -> Optional[Dict]:
 
 
 async def get_item_count(query: Optional[str] = None, kind: Optional[str] = None) -> int:
-    """Return total number of items (optionally filtered)."""
+    """Return total number of items (optionally filtered).
+    
+    Counts across unified view of theorems, definitions, and items tables.
+    """
     def _count():
         conn = _connect()
         try:
@@ -226,7 +275,17 @@ async def get_item_count(query: Optional[str] = None, kind: Optional[str] = None
                 params.append(kind)
 
             where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-            cursor = conn.execute(f"SELECT COUNT(*) FROM items{where_clause}", params)
+            
+            # UNION ALL to create virtual view, then count
+            union_query = f"""
+                SELECT name, raw as source, 'theorem' as kind FROM theorems
+                UNION ALL
+                SELECT name, definition as source, COALESCE(kind, 'definition') as kind FROM definitions
+                UNION ALL
+                SELECT name, source, kind FROM items
+            """
+            
+            cursor = conn.execute(f"SELECT COUNT(*) FROM ({union_query}){where_clause}", params)
             (count,) = cursor.fetchone()
             return count
         finally:
@@ -237,6 +296,11 @@ async def get_item_count(query: Optional[str] = None, kind: Optional[str] = None
 
 async def get_items(limit: int, offset: int = 0, query: Optional[str] = None, kind: Optional[str] = None) -> List[Dict]:
     """Return a slice of items ordered by recency.
+    
+    This creates a virtual unified view by performing UNION ALL across:
+    - theorems table (mapped to items schema)
+    - definitions table (mapped to items schema)  
+    - items table (native schema)
     
     WARNING: Search Performance Issue
     ----------------------------------
@@ -255,23 +319,59 @@ async def get_items(limit: int, offset: int = 0, query: Optional[str] = None, ki
     def _list():
         conn = _connect()
         try:
-            # Build WHERE clause
-            where_clauses = []
+            # Build WHERE clause components
+            where_conditions = []
             params = []
             
             if query:
-                where_clauses.append("(name LIKE ? OR source LIKE ?)")
-                params.extend([f"%{query}%", f"%{query}%"])
+                # For union, we need to filter each subquery
+                query_term = f"%{query}%"
+                where_conditions.append("(name LIKE ? OR source LIKE ?)")
+                params.extend([query_term, query_term])
             
             if kind:
-                where_clauses.append("kind = ?")
+                where_conditions.append("kind = ?")
                 params.append(kind)
-
-            where_clause = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-            cursor = conn.execute(
-                f"SELECT * FROM items{where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (*params, limit, offset)
-            )
+            
+            where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+            
+            # UNION ALL query combining all three tables
+            # Map theorems: id, name, 'theorem' as kind, raw as source, NULL as uuid/identifier_name, file_path, line_number, created_at
+            # Map definitions: id, name, kind (or 'definition'), definition as source, NULL as uuid/identifier_name, file_path, line_number, created_at
+            # Map items: all fields as-is
+            
+            union_query = f"""
+                SELECT 
+                    id, name, 'theorem' as kind, raw as source, 
+                    NULL as uuid, NULL as identifier_name,
+                    file_path, line_number, created_at
+                FROM theorems
+                
+                UNION ALL
+                
+                SELECT 
+                    id, name, COALESCE(kind, 'definition') as kind, definition as source,
+                    NULL as uuid, NULL as identifier_name,
+                    file_path, line_number, created_at
+                FROM definitions
+                
+                UNION ALL
+                
+                SELECT 
+                    id, name, kind, source, uuid, identifier_name,
+                    file_path, line_number, created_at
+                FROM items
+            """
+            
+            # Wrap in subquery to apply filters and ordering
+            final_query = f"""
+                SELECT * FROM ({union_query})
+                {where_clause}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """
+            
+            cursor = conn.execute(final_query, (*params, limit, offset))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
@@ -280,12 +380,15 @@ async def get_items(limit: int, offset: int = 0, query: Optional[str] = None, ki
     return await _run_in_executor(_list)
 
 
+
 async def get_all_items() -> List[Dict]:
     """Get all items from the database.
     
+    Returns unified view of all theorems, definitions, and items.
+    
     WARNING: Performance Issue - Memory Bomb Risk
     -----------------------------------------------
-    This function executes SELECT * FROM items without LIMIT, loading ALL data
+    This function executes SELECT * without LIMIT, loading ALL data
     into memory at once. This is fine for small datasets (< 1000 items) but will
     cause serious problems at scale:
     
@@ -303,7 +406,32 @@ async def get_all_items() -> List[Dict]:
     def _list_all():
         conn = _connect()
         try:
-            cursor = conn.execute("SELECT * FROM items ORDER BY created_at DESC")
+            # UNION ALL across all three tables
+            union_query = """
+                SELECT 
+                    id, name, 'theorem' as kind, raw as source,
+                    NULL as uuid, NULL as identifier_name,
+                    file_path, line_number, created_at
+                FROM theorems
+                
+                UNION ALL
+                
+                SELECT 
+                    id, name, COALESCE(kind, 'definition') as kind, definition as source,
+                    NULL as uuid, NULL as identifier_name,
+                    file_path, line_number, created_at
+                FROM definitions
+                
+                UNION ALL
+                
+                SELECT 
+                    id, name, kind, source, uuid, identifier_name,
+                    file_path, line_number, created_at
+                FROM items
+                
+                ORDER BY created_at DESC
+            """
+            cursor = conn.execute(union_query)
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         finally:
@@ -313,7 +441,7 @@ async def get_all_items() -> List[Dict]:
 
 
 async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
-    \"\"\"Search for theorems/axioms using TF-IDF, Jaccard, tree edit distance on Lark-parsed head AST token seq.\"\"\"
+    """Search for theorems/axioms using TF-IDF, Jaccard, tree edit distance on Lark-parsed head AST token seq."""
     import re
     from collections import Counter, defaultdict
     from difflib import SequenceMatcher
@@ -321,12 +449,11 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
     from lark import Lark, Tree, Token
     from typing import List, Dict, Any
 
-    ROOT_DIR = Path(__file__).resolve().parent.parent
-    grammar_path = ROOT_DIR / \"acorn_mcp\" / \"acorn\" / \"acorn.lark\"
-    lark_parser = Lark(grammar_path.read_text(), parser=\"lalr\", propagate_positions=False)
+    grammar_path = ROOT_DIR / "acorn_mcp" / "acorn" / "acorn.lark"
+    lark_parser = Lark(grammar_path.read_text(), parser="lalr", propagate_positions=False)
 
     def flatten_tree(node: Any) -> List[str]:
-        \"\"\"Preorder token seq from Lark tree (labels + leaves).\"\"\"
+        """Preorder token seq from Lark tree (labels + leaves)."""
         if isinstance(node, Token):
             return [node.value]
         seq = [node.data]
@@ -335,9 +462,19 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
         return seq
 
     def get_head_ast_seq(raw: str) -> List[str]:
-        \"\"\"Parse raw → theorem head expr tree → flatten token seq.\"\"\"
+        """Parse raw → theorem head expr tree → flatten token seq."""
         try:
-            tree = lark_parser.parse(raw)
+            # CRITICAL FIX: raw field doesn't include 'theorem' keyword, so prepend it
+            # to make it parseable by Lark grammar which expects 'theorem name(...) { ... }'
+            if not raw.strip().startswith(('theorem ', 'axiom ')):
+                # Extract function name from signature (before first paren or brace)
+                match = re.match(r'([a-z_][a-z0-9_]*)', raw.strip())
+                func_name = match.group(1) if match else 'unnamed'
+                parseable_raw = f'theorem {raw}'
+            else:
+                parseable_raw = raw
+            
+            tree = lark_parser.parse(parseable_raw)
             for stmt in tree.children:
                 if stmt.data == 'theorem_decl':
                     # Find head expr after first {
@@ -361,13 +498,15 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
                                             norm_seq.append(t.lower())
                                     return norm_seq
             return []
-        except:
-            # Fallback regex words
-            head = re.search(r'theorem\\s+[^\\{]*\\{([^}]*?)(?=\\s+by\\s*\\{|$)', raw, re.DOTALL)
+        except Exception as e:
+            # Fallback regex words - extract from head/body
+            # raw format: "func_name(...) { head_expr } by { proof }"
+            head = re.search(r'\{([^}]*?)(?:\s+by\s*\{|$)', raw, re.DOTALL)
             head_text = head.group(1).strip() if head else raw
-            words = re.findall(r'\\b[a-z_][a-z0-9_]*\\b', head_text.lower())
+            words = re.findall(r'\b[a-z_][a-z0-9_]*\b', head_text.lower())
             stop = {'theorem', 'axiom', 'let', 'define', 'if', 'else', 'match', 'forall', 'exists', 'and', 'or', 'not', 'implies', 'suc', 'self', 'other', 'pred', 'nat'}
             return [w for w in words if w not in stop and len(w) > 1]
+
 
     def jaccard_sim(q_seq: List[str], doc_seq: List[str]) -> float:
         q_set = set(q_seq)
@@ -387,7 +526,7 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
     def _search():
         conn = _connect()
         try:
-            cursor = conn.execute(\"SELECT * FROM items WHERE kind IN ('theorem', 'axiom')\")
+            cursor = conn.execute("SELECT * FROM theorems")
             candidates = [dict(row) for row in cursor.fetchall()]
             if not candidates:
                 return []
@@ -401,7 +540,7 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
             doc_seqs = []
             docs = []
             for doc in candidates:
-                doc_seq = get_head_ast_seq(doc['source'])
+                doc_seq = get_head_ast_seq(doc['raw'])
                 docs.append(doc)
                 doc_vec = Counter(doc_seq)
                 doc_words_set = set(doc_seq)
@@ -411,7 +550,7 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
 
             scores = []
             for i, doc in enumerate(docs):
-                doc_seq = get_head_ast_seq(doc['source'])
+                doc_seq = get_head_ast_seq(doc['raw'])
                 doc_vec = doc_seqs[i]
 
                 jacc = jaccard_sim(q_seq, doc_seq)
@@ -430,20 +569,90 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
 
 # Legacy theorem/definition functions (kept for backward compatibility)
 
-async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
+async def add_theorem(name: str, raw: str,
                       file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
     """Add a new theorem to the database.
     
     This writes to the 'theorems' table and is the CORRECT way to store theorems
     for Formalizer integration. Data written here is queryable via /api/theorems.
+    
+    Args:
+        name: Fully qualified theorem name (e.g., 'group.inverse_inverse')
+        raw: Complete theorem source code including 'theorem' keyword, head, and proof
+             Example: "theorem foo(x: Nat) { x = x } by { reflexivity }"
+        file_path: Optional source file path
+        line_number: Optional line number in source file
+    
+    Returns:
+        Dict containing the inserted theorem data
+    
+    The function automatically parses:
+    - theorem_head: The head portion (function signature and statement)
+    - proof: The proof block content (if present)
+    - raw: Normalized form (removes 'theorem' keyword prefix for database storage)
     """
-    def _insert():
+    import re
+    
+    def _parse_and_insert():
         conn = _connect()
         try:
+            # Parse the raw source to extract components
+            raw_stripped = raw.strip()
+            
+            # Extract theorem head
+            # Pattern: (theorem|axiom) name(...) { head_expr } [by { proof }]
+            # Goal: Extract everything from keyword to end of first brace block
+            
+            # Check if raw starts with theorem/axiom keyword
+            has_keyword = raw_stripped.startswith(('theorem ', 'axiom '))
+            
+            # Remove keyword if present for normalized storage
+            if has_keyword:
+                # Find where the keyword ends
+                keyword_match = re.match(r'^(theorem|axiom)\s+', raw_stripped)
+                if keyword_match:
+                    normalized_raw = raw_stripped[keyword_match.end():]
+                else:
+                    normalized_raw = raw_stripped
+            else:
+                normalized_raw = raw_stripped
+            
+            # Extract head: everything up to 'by {' or end of string
+            # Head format: name(...) { statement }
+            by_match = re.search(r'\s+by\s*\{', normalized_raw)
+            
+            if by_match:
+                # Has proof
+                head_end = by_match.start()
+                theorem_head = normalized_raw[:head_end].strip()
+                
+                # Extract proof: content between 'by {' and final '}'
+                proof_start = by_match.end()
+                # Find matching closing brace
+                brace_count = 1
+                i = proof_start
+                while i < len(normalized_raw) and brace_count > 0:
+                    if normalized_raw[i] == '{':
+                        brace_count += 1
+                    elif normalized_raw[i] == '}':
+                        brace_count -= 1
+                    i += 1
+                
+                if brace_count == 0:
+                    proof = normalized_raw[proof_start:i-1].strip()
+                else:
+                    # Unmatched braces, take everything after 'by {'
+                    proof = normalized_raw[proof_start:].strip()
+            else:
+                # No proof (axiom or unproven theorem)
+                theorem_head = normalized_raw.strip()
+                proof = ""
+            
+            # Insert into database
             cursor = conn.execute(
                 """INSERT INTO theorems (name, theorem_head, proof, raw, file_path, line_number)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (name, theorem_head, proof, raw, file_path, line_number)
+                (name, theorem_head, proof, normalized_raw, file_path, line_number)
             )
             conn.commit()
             return {
@@ -451,7 +660,7 @@ async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
                 "name": name,
                 "theorem_head": theorem_head,
                 "proof": proof,
-                "raw": raw,
+                "raw": normalized_raw,
                 "file_path": file_path,
                 "line_number": line_number
             }
@@ -460,7 +669,7 @@ async def add_theorem(name: str, theorem_head: str, proof: str, raw: str,
         finally:
             conn.close()
 
-    return await _run_in_executor(_insert)
+    return await _run_in_executor(_parse_and_insert)
 
 
 async def get_theorem(name: str) -> Optional[Dict]:

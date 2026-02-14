@@ -11,7 +11,8 @@ from acorn_mcp.database import (
     get_all_theorems,
     add_definition,
     get_definition,
-    get_all_definitions
+    get_all_definitions,
+    search_theorems
 )
 from acorn_mcp.syntax_checker import load_syntax_reference, check_syntax
 from acorn_mcp.code_verifier import check_verification
@@ -32,22 +33,14 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Name of the theorem"
-                    },
-                    "theorem_head": {
-                        "type": "string",
-                        "description": "Statement of the theorem"
-                    },
-                    "proof": {
-                        "type": "string",
-                        "description": "Proof of the theorem"
+                        "description": "Fully qualified theorem name (e.g., 'group.inverse_inverse')"
                     },
                     "raw": {
                         "type": "string",
-                        "description": "Raw theorem text with free variables"
+                        "description": "Complete theorem source including 'theorem' keyword, head, and proof. Example: 'theorem foo(x: Nat) { x = x } by { reflexivity }'"
                     }
                 },
-                "required": ["name", "theorem_head", "proof", "raw"]
+                "required": ["name", "raw"]
             }
         ),
         Tool(
@@ -70,6 +63,20 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {}
+            }
+        ),
+        Tool(
+            name="search_theorems",
+            description="Search for theorems using semantic search (TF-IDF, Jaccard, tree edit distance)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    }
+                },
+                "required": ["query"]
             }
         ),
         Tool(
@@ -158,8 +165,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name == "add_theorem":
             result = await add_theorem(
                 arguments["name"],
-                arguments["theorem_head"],
-                arguments["proof"],
                 arguments["raw"]
             )
             return [TextContent(
@@ -182,6 +187,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         elif name == "list_theorems":
             result = await get_all_theorems()
+            return [TextContent(
+                type="text",
+                text=json.dumps(result, indent=2)
+            )]
+        
+        elif name == "search_theorems":
+            result = await search_theorems(arguments["query"])
             return [TextContent(
                 type="text",
                 text=json.dumps(result, indent=2)

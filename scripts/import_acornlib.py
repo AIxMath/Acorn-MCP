@@ -14,6 +14,8 @@ from typing import List
 from acorn_mcp.database import (
     init_database,
     add_item,
+    add_theorem,
+    add_definition,
 )
 from acorn_mcp.acorn import AcornParser
 from acorn_mcp.acorn.ast import AcornItem
@@ -49,23 +51,6 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
         rel = item.location.file.relative_to(ACORNLIB_SRC).with_suffix("")
         return ".".join(rel.parts)
 
-    # Process item names based on kind
-    for item in items:
-        # Store the simple identifier name (last part after dot)
-        identifier_name = item.name.split('.')[-1] if '.' in item.name else item.name
-        item.identifier_name = identifier_name
-
-        # For typeclass/attributes members, keep the qualified name (Type.member)
-        # For other items, use only the simple identifier
-        if item.kind in ('attributes_method', 'attributes_constant', 'typeclass_method', 'typeclass_field', 'typeclass_axiom'):
-            # Keep qualified name like "List.range", "FiniteGroup.elements", etc.
-            # Name is already set correctly by parser
-            pass
-        else:
-            # Store only the simple identifier in name column
-            # Uniqueness is ensured by (file_path, name) composite constraint
-            item.name = identifier_name
-
     if dry_run:
         print(f"[dry-run] Parsed {len(items)} items.")
         # Count by type
@@ -84,15 +69,65 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
 
     for item in items:
         try:
-            await add_item(
-                name=item.name,
-                kind=item.kind,
-                source=item.source,
-                uuid=item.uuid,
-                identifier_name=item.identifier_name,
-                file_path=str(item.location.file.relative_to(ROOT_DIR)),
-                line_number=item.location.line
-            )
+            # Determine module name to ensure uniqueness
+            try:
+                module_name = get_module(item)
+            except Exception:
+                module_name = "unknown"
+
+            # Enforce qualified names for EVERYTHING in theorems/definitions tables
+            # to prevent 'UNIQUE constraint failed' errors.
+            # Example: "inverse_inverse" -> "group.inverse_inverse"
+            # Example: "List.map" -> "collections.list.List.map"
+            if module_name and module_name != ".":
+                if item.kind in ('attributes_method', 'attributes_constant', 'typeclass_method', 'typeclass_field', 'typeclass_axiom'):
+                    # These already have "Type.member" name from parser
+                    item.name = f"{module_name}.{item.name}"
+                elif '.' not in item.name:
+                    # Simple names get module prefix
+                    item.name = f"{module_name}.{item.name}"
+                else:
+                    # Already has dot but not one of the special member kinds?
+                    # Safer to prepend module anyway if it doesn't look like it includes module.
+                    # But parser usually gives simple names or Type.member.
+                    # Let's simple prepend module to ensure global uniqueness.
+                    # Check if already starts with module to avoid double prefixing (unlikely with this logic)
+                    if not item.name.startswith(module_name + "."):
+                        item.name = f"{module_name}.{item.name}"
+
+            # Route items to specific tables based on kind
+            if item.kind in ('theorem', 'axiom', 'typeclass_axiom'):
+                # Reconstruct raw source with theorem keyword for parsing
+                # The parser stores raw without keyword, but add_theorem expects it with keyword
+                raw_with_keyword = f"{item.kind} {getattr(item, 'raw', item.source)}"
+                
+                await add_theorem(
+                    name=item.name,
+                    raw=raw_with_keyword,
+                    file_path=str(item.location.file.relative_to(ROOT_DIR)),
+                    line_number=item.location.line
+                )
+            elif item.kind in ('define', 'definition', 'structure', 'inductive', 'typeclass', 
+                             'typeclass_method', 'typeclass_field', 
+                             'attributes_method', 'attributes_constant', 'instance'):
+                await add_definition(
+                    name=item.name,
+                    definition=item.source,
+                    kind=item.kind,
+                    file_path=str(item.location.file.relative_to(ROOT_DIR)),
+                    line_number=item.location.line
+                )
+            else:
+                # Fallback for anything else
+                await add_item(
+                    name=item.name,
+                    kind=item.kind,
+                    source=item.source,
+                    uuid=item.uuid,
+                    identifier_name=item.identifier_name,
+                    file_path=str(item.location.file.relative_to(ROOT_DIR)),
+                    line_number=item.location.line
+                )
             added += 1
         except ValueError as e:
             skipped += 1

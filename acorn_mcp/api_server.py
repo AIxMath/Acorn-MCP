@@ -18,6 +18,7 @@ from acorn_mcp.database import (
     get_theorem,
     get_theorem_count,
     get_theorems,
+    search_theorems,
     add_definition,
     get_definition,
     get_definition_count,
@@ -58,9 +59,7 @@ app.add_middleware(
 # Pydantic models for request validation
 class TheoremCreate(BaseModel):
     name: str
-    theorem_head: str
-    proof: str
-    raw: str
+    raw: str  # Complete theorem source with keyword, head, and proof
 
 
 class DefinitionCreate(BaseModel):
@@ -138,11 +137,21 @@ async def list_theorems(
     q: str | None = Query(None, description="Optional search query")
 ):
     """Get paginated theorems."""
-    total = await get_theorem_count(query=q)
-    total_pages = max(1, ceil(total / page_size)) if total else 1
-    safe_page = min(page, total_pages)
-    offset = (safe_page - 1) * page_size
-    theorems = await get_theorems(limit=page_size, offset=offset, query=q)
+    # Use smart search when query is provided, otherwise list all with pagination
+    if q:
+        # Use semantic search (TF-IDF + Jaccard + tree edit distance)
+        theorems = await search_theorems(q, limit=page_size)
+        total = len(theorems)
+        total_pages = 1  # Search results are not paginated
+        safe_page = 1
+    else:
+        # List all theorems with pagination
+        total = await get_theorem_count(query=None)
+        total_pages = max(1, ceil(total / page_size)) if total else 1
+        safe_page = min(page, total_pages)
+        offset = (safe_page - 1) * page_size
+        theorems = await get_theorems(limit=page_size, offset=offset, query=None)
+    
     return {
         "theorems": theorems,
         "total": total,
@@ -168,8 +177,6 @@ async def create_theorem(theorem: TheoremCreate):
     try:
         result = await add_theorem(
             theorem.name,
-            theorem.theorem_head,
-            theorem.proof,
             theorem.raw
         )
         return result

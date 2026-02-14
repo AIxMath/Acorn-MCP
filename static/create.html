@@ -197,7 +197,15 @@
             const name = document.getElementById('theorem-name').value.trim();
             const theoremHead = document.getElementById('theorem-head').value.trim();
             const proof = document.getElementById('theorem-proof').value.trim();
-            const raw = document.getElementById('theorem-raw').value.trim();
+            const rawInput = document.getElementById('theorem-raw').value.trim();
+
+            // Construct complete raw source (must include theorem keyword)
+            // If user provided raw without keyword, prepend it
+            let raw = rawInput;
+            if (!raw.startsWith('theorem ') && !raw.startsWith('axiom ')) {
+                // User might have entered just the body, reconstruct full form
+                raw = `theorem ${name}${theoremHead}\n${proof ? 'by {\n' + proof + '\n}' : ''}`;
+            }
 
             try {
                 const response = await fetch('/api/theorems', {
@@ -207,8 +215,6 @@
                     },
                     body: JSON.stringify({
                         name,
-                        theorem_head: theoremHead,
-                        proof,
                         raw
                     })
                 });

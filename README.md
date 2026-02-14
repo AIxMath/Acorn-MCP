@@ -21,7 +21,7 @@ A Model Context Protocol (MCP) server for managing mathematical theorems and def
 
 The project consists of three main components:
 
-1. **Database Layer** (`acorn_mcp/database.py`): SQLite database with async operations for theorems and definitions
+1. **Database Layer** (`acorn_mcp/database.py`): SQLite database with separate tables for theorems and definitions (previously a unified items table) for better query performance and organization
 2. **MCP Server** (`acorn_mcp/mcp_server.py`): Model Context Protocol server that LLMs can use to access the knowledge base
 3. **API Server** (`acorn_mcp/api_server.py`): FastAPI backend providing REST endpoints for the web interface
 4. **Frontend** (`static/index.html`): Interactive web interface for viewing and managing content
@@ -125,6 +125,7 @@ The MCP server provides the following tools for LLMs:
 - `add_theorem`: Add a new theorem (requires: name, theorem_head, proof, raw)
 - `get_theorem`: Retrieve a theorem by name
 - `list_theorems`: List all theorems
+- `search_theorems`: Search for theorems by semantic similarity
 - `add_definition`: Add a new definition (requires: name, definition)
 - `get_definition`: Retrieve a definition by name
 - `list_definitions`: List all definitions
