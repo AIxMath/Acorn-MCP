@@ -25,10 +25,214 @@ from typing import Dict, List, Optional
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATABASE_PATH = ROOT_DIR / "acorn_mcp.db"
+ACORNLIB_SRC = ROOT_DIR / "acornlib" / "src"
 
 MAX_PAGE_SIZE = 100
 DB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acorn-db")
 atexit.register(DB_EXECUTOR.shutdown)
+
+
+
+def _is_import_line(line: str) -> bool:
+    """Check if a line is an Acorn import/numerals statement.
+    
+    Matches:
+      - ``import module_name``
+      - ``from module import Item1, Item2``
+      - ``numerals TypeName``
+    
+    Comments and blank lines are NOT considered import lines.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("//") or stripped.startswith("/*"):
+        return False
+    return (stripped.startswith("import ")
+            or stripped.startswith("from ")
+            or stripped.startswith("numerals "))
+
+
+def _split_imports_body(content: str) -> tuple[list[str], list[str]]:
+    """Split Acorn source content into import lines and body lines.
+    
+    The import section is defined as the contiguous block of import/numerals
+    lines (plus interleaved blank lines and comments) at the **top** of the
+    content.  Everything after the first non-import, non-blank, non-comment
+    line belongs to the body.
+    
+    Returns:
+        (import_lines, body_lines) – each is a list of raw line strings
+        (without trailing newline).
+    """
+    lines = content.split("\n")
+    
+    import_lines: list[str] = []
+    body_start_idx = 0
+    
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//") or stripped.startswith("/*"):
+            # Blank / comment – part of the import header while we haven't
+            # seen any body yet.
+            import_lines.append(line)
+        elif _is_import_line(line):
+            import_lines.append(line)
+        else:
+            # First real body line – everything from here on is body.
+            body_start_idx = i
+            break
+    else:
+        # Entire content is imports (or empty).
+        return import_lines, []
+    
+    # Trim trailing blank lines from import section (they'll be re-added as
+    # separators when we write the file).
+    while import_lines and not import_lines[-1].strip():
+        import_lines.pop()
+    
+    body_lines = lines[body_start_idx:]
+    return import_lines, body_lines
+
+
+def _read_file_sections(full_path: Path) -> tuple[list[str], list[str]]:
+    """Read an existing .ac file and split into import lines and body lines."""
+    with open(full_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return _split_imports_body(content)
+
+
+def _append_to_file(relative_path: str, content: str) -> tuple[int, int | None]:
+    """Append content to a file in acornlib/src with import deduplication.
+    
+    When appending to an existing file the function:
+      1. Splits the new *content* into import lines and body lines.
+      2. Reads the existing file and splits it the same way.
+      3. Merges imports: new import lines that already exist in the file are
+         dropped (exact-match after stripping whitespace).
+      4. Writes back: merged imports + existing body + separator + new body.
+    
+    This prevents duplicate ``import`` / ``from … import`` / ``numerals``
+    statements that would cause Acorn compiler errors when multiple entries
+    from the same header are written to the same file.
+    
+    Returns:
+        tuple[int, int | None]: (start_line_number, original_file_size)
+        - start_line_number: The line number where the new *body* content
+          starts (import lines inserted at the top are not counted here so
+          that the caller can record the position of the theorem/definition).
+        - original_file_size: Size of file before modification, or None if
+          the file didn't exist.  Used for rollback via ``_rollback_file_write``.
+    """
+    if not relative_path:
+        return None, None
+
+    # Fix: Clients (translator.py, import_acornlib.py) send paths relative to
+    # project root (e.g., "acornlib/src/Analysis-I/foo.ac").
+    # Strip the prefix to avoid doubling.
+    clean_rel_path = relative_path.replace("\\", "/")
+    if clean_rel_path.startswith("acornlib/src/"):
+        relative_path = clean_rel_path[len("acornlib/src/"):]
+
+    full_path = ACORNLIB_SRC / relative_path
+
+    # Ensure directory exists
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Split incoming content
+    new_imports, new_body = _split_imports_body(content)
+
+    original_size = None
+
+    if full_path.exists() and full_path.stat().st_size > 0:
+        original_size = full_path.stat().st_size
+
+        # Read and split existing file
+        existing_imports, existing_body = _read_file_sections(full_path)
+
+        # Deduplicate imports: keep existing order, append only truly new ones
+        existing_import_set = {line.strip() for line in existing_imports
+                               if line.strip()}
+        merged_imports = list(existing_imports)
+        for imp in new_imports:
+            if imp.strip() and imp.strip() not in existing_import_set:
+                merged_imports.append(imp)
+                existing_import_set.add(imp.strip())
+
+        # Build final file content
+        parts: list[str] = []
+
+        # 1. Merged imports
+        if merged_imports:
+            parts.append("\n".join(merged_imports))
+
+        # 2. Existing body
+        if existing_body:
+            parts.append("\n".join(existing_body))
+
+        # 3. New body (separated by blank line)
+        if new_body:
+            parts.append("\n".join(new_body))
+
+        final_content = "\n\n".join(p for p in parts if p) + "\n"
+
+        # Calculate start line for the new body
+        # = lines in (merged imports) + lines in (existing body) + 2 (blank separator)
+        lines_before = 0
+        if merged_imports:
+            lines_before += len(merged_imports)
+        if existing_body:
+            lines_before += 1  # blank separator between imports and existing body
+            lines_before += len(existing_body)
+        # +2 for the blank separator line before new body
+        start_line = lines_before + 2 if lines_before > 0 else 1
+
+        # Rewrite the entire file
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(final_content)
+    else:
+        # New file – just write everything as-is
+        if full_path.exists():
+            original_size = 0
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content + "\n")
+        start_line = 1
+
+    return start_line, original_size
+
+
+def _rollback_file_write(relative_path: str, original_size: int | None) -> None:
+    """Rollback a file write operation.
+    
+    Args:
+        relative_path: Path to the file relative to acornlib/src
+        original_size: Size of the file before the write operation. 
+                       None implies the file did not exist.
+    """
+    if not relative_path:
+        return
+
+    # Fix: Strip prefix (same as _append_to_file)
+    clean_rel_path = relative_path.replace("\\", "/")
+    if clean_rel_path.startswith("acornlib/src/"):
+        relative_path = clean_rel_path[len("acornlib/src/"):]
+
+    full_path = ACORNLIB_SRC / relative_path
+    
+    if not full_path.exists():
+        return
+
+    try:
+        if original_size is None:
+            # File didn't exist before, so delete it
+            full_path.unlink()
+        else:
+            # File existed, truncate to original size
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.truncate(original_size)
+    except Exception as e:
+        # Log error but don't crash, rollback is best-effort
+        print(f"Error during file rollback for {relative_path}: {e}")
+
+
 
 
 def _connect() -> sqlite3.Connection:
@@ -43,6 +247,75 @@ def _run_in_executor(fn):
     return loop.run_in_executor(DB_EXECUTOR, fn)
 
 
+
+
+def sanitize_file_path(path: str) -> str:
+    """Sanitize file path for Acorn compatibility.
+    
+    Acorn requires filenames to be lowercase and without spaces/hyphens/#/dots/().
+    It does NOT support starting with a number.
+    It does NOT support single quotes.
+    
+    This function:
+    1. Converts to lowercase
+    2. Removes single quotes and closing parentheses
+    3. REPLACES spaces, hyphens, hashes, dots, opening parentheses, and other symbols
+       with underscores ('_').
+       Symbols: ~!@$%^&+?<>|{}[]=:;,
+       (Preserving the final .ac extension)
+    4. Strings leading non-alpha characters from filename (e.g. "1.1 Intro.ac" -> "intro.ac")
+    5. Keeps slashes and underscores
+    """
+    if not path:
+        return path
+        
+    import re
+        
+    # Convert to standard path format first
+    clean_path = path.replace("\\", "/")
+    
+    # Lowercase
+    clean_path = clean_path.lower()
+    
+    # Remove single quotes and closing parentheses (per user request)
+    for char in ["'", ")"]:
+        clean_path = clean_path.replace(char, "")
+    
+    # Check extension
+    extension = ""
+    if clean_path.endswith(".ac"):
+        clean_path = clean_path[:-3]
+        extension = ".ac"
+        
+    # Replace forbidden characters with underscores
+    # Added '.' to the list as per user request (Acorn doesn't like dots in import names)
+    # Added '(' to be replaced by '_'
+    # Added extra symbols: ~!@$%^&+?<>|{}[]=:;,
+    special_chars = [' ', '-', '#', '.', '(', '~', '!', '@', '$', '%', '^', '&', '+', '?', '<', '>', '|', '{', '}', '[', ']', '=', ':', ';', ',']
+    
+    for char in special_chars:
+        clean_path = clean_path.replace(char, '_')
+        
+    # Handle filename vs directory logic
+    # Path might be "dir/subdir/filename"
+    parts = clean_path.split('/')
+    filename = parts[-1]
+    
+    # Strip leading non-alpha characters from filename (new requirement)
+    # Acorn imports cannot start with numbers/symbols
+    # e.g. "1_1_intro" -> "intro"
+    match = re.search(r'[a-z]', filename)
+    if match:
+        start_idx = match.start()
+        clean_filename = filename[start_idx:]
+    else:
+        # If no letters found (e.g. "123"), keep as is (though it will fail import likely)
+        clean_filename = filename
+        
+    parts[-1] = clean_filename
+    clean_path = "/".join(parts)
+        
+    return clean_path + extension
 
 
 async def init_database():
@@ -570,7 +843,8 @@ async def search_theorems(q: str, limit: int = 5) -> List[Dict]:
 # Legacy theorem/definition functions (kept for backward compatibility)
 
 async def add_theorem(name: str, raw: str,
-                      file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
+                      file_path: Optional[str] = None, line_number: Optional[int] = None,
+                      persist_to_file: bool = True) -> Dict:
     """Add a new theorem to the database.
     
     This writes to the 'theorems' table and is the CORRECT way to store theorems
@@ -582,6 +856,8 @@ async def add_theorem(name: str, raw: str,
              Example: "theorem foo(x: Nat) { x = x } by { reflexivity }"
         file_path: Optional source file path
         line_number: Optional line number in source file
+        persist_to_file: If True (default), writes/appends content to file_path.
+                         Set to False when importing from existing files to prevent duplication.
     
     Returns:
         Dict containing the inserted theorem data
@@ -594,6 +870,22 @@ async def add_theorem(name: str, raw: str,
     import re
     
     def _parse_and_insert():
+        # Capturing variables from outer scope. 
+        # Since we might update line_number if writing to file, we use a local var for the INSERT.
+        # But we can't easily modify the outer 'line_number' arg if it's immutable (int/None).
+        # Use local variable 'insert_line_number'.
+        insert_line_number = line_number
+        original_size = None
+
+        # Sanitize path if provided
+        # This modification ensures all paths stored in DB and used for file creation
+        # comply with Acorn's strict naming requirements (lowercase, no spaces/hyphens/#)
+        sanitized_path = sanitize_file_path(file_path) if file_path else None
+
+        # If file_path is provided and persistence is enabled, write to file first
+        if sanitized_path and persist_to_file:
+            insert_line_number, original_size = _append_to_file(sanitized_path, raw)
+
         conn = _connect()
         try:
             # Parse the raw source to extract components
@@ -652,7 +944,7 @@ async def add_theorem(name: str, raw: str,
             cursor = conn.execute(
                 """INSERT INTO theorems (name, theorem_head, proof, raw, file_path, line_number)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (name, theorem_head, proof, normalized_raw, file_path, line_number)
+                (name, theorem_head, proof, normalized_raw, sanitized_path, insert_line_number)
             )
             conn.commit()
             return {
@@ -661,11 +953,17 @@ async def add_theorem(name: str, raw: str,
                 "theorem_head": theorem_head,
                 "proof": proof,
                 "raw": normalized_raw,
-                "file_path": file_path,
-                "line_number": line_number
+                "file_path": sanitized_path,
+                "line_number": insert_line_number
             }
-        except sqlite3.IntegrityError as exc:
-            raise ValueError(f"Theorem with name '{name}' already exists") from exc
+        except Exception as e:
+            # Rollback file write if DB insert fails
+            if sanitized_path and persist_to_file:
+                _rollback_file_write(sanitized_path, original_size)
+            
+            if isinstance(e, sqlite3.IntegrityError):
+                raise ValueError(f"Theorem with name '{name}' already exists") from e
+            raise e
         finally:
             conn.close()
 
@@ -755,19 +1053,35 @@ async def get_all_theorems() -> List[Dict]:
 
 
 async def add_definition(name: str, definition: str, kind: Optional[str] = None,
-                        file_path: Optional[str] = None, line_number: Optional[int] = None) -> Dict:
+                         file_path: Optional[str] = None, line_number: Optional[int] = None,
+                         persist_to_file: bool = True) -> Dict:
     """Add a new definition to the database.
     
     This writes to the 'definitions' table and is the CORRECT way to store definitions
     for Formalizer integration. Data written here is queryable via /api/definitions.
+
+    Args:
+        persist_to_file: If True (default), writes/appends content to file_path.
+                         Set to False when importing from existing files.
     """
     def _insert():
+        # Use local var for line number to handle potential file writing update
+        insert_line_number = line_number
+        original_size = None
+        
+        # Sanitize path if provided
+        sanitized_path = sanitize_file_path(file_path) if file_path else None
+
+        # If file_path is provided and persistence is enabled, write to file
+        if sanitized_path and persist_to_file:
+            insert_line_number, original_size = _append_to_file(sanitized_path, definition)
+
         conn = _connect()
         try:
             cursor = conn.execute(
                 """INSERT INTO definitions (name, definition, kind, file_path, line_number)
                    VALUES (?, ?, ?, ?, ?)""",
-                (name, definition, kind, file_path, line_number)
+                (name, definition, kind, sanitized_path, insert_line_number)
             )
             conn.commit()
             return {
@@ -775,11 +1089,17 @@ async def add_definition(name: str, definition: str, kind: Optional[str] = None,
                 "name": name,
                 "definition": definition,
                 "kind": kind,
-                "file_path": file_path,
-                "line_number": line_number
+                "file_path": sanitized_path,
+                "line_number": insert_line_number
             }
-        except sqlite3.IntegrityError as exc:
-            raise ValueError(f"Definition with name '{name}' already exists") from exc
+        except Exception as e:
+            # Rollback file write if DB insert fails
+            if sanitized_path and persist_to_file:
+                _rollback_file_write(sanitized_path, original_size)
+            
+            if isinstance(e, sqlite3.IntegrityError):
+                raise ValueError(f"Definition with name '{name}' already exists") from e
+            raise e
         finally:
             conn.close()
 

@@ -2,8 +2,8 @@
 %import common.NL
 %ignore WS
 %ignore /\/\*[\s\S]*?\*\//
-%ignore /\/\/.*$/
-%ignore /\/\/\/.*$/
+%ignore /\/\/\/[^\n]*/
+%ignore /\/\/[^\n]*/
 
 start: statement*
 
@@ -19,39 +19,45 @@ statement: import_stmt
         | instance_decl
         | NL
 
+// ─── Imports ──────────────────────────────────────────────
 import_stmt: "import" module_name
            | "from" module_name "import" ID ("," ID)*
 module_name: LOWER_ID ("/" LOWER_ID)*
 
 numerals_stmt: "numerals" PASCAL_ID
 
+// ─── Top-level Declarations ──────────────────────────────
 inductive_decl: "inductive" PASCAL_ID type_params? "{" constructor* "}"
 
 structure_decl: "structure" PASCAL_ID type_params? "{" field_decl* constraint? "}"
 
-typeclass_decl: "typeclass" type_param? ":" PASCAL_ID ("extends" PASCAL_ID ("," PASCAL_ID)*)? "{" typeclass_member* "}"
+typeclass_decl: "typeclass" type_param_item ":" PASCAL_ID ("extends" PASCAL_ID ("," PASCAL_ID)*)? "{" typeclass_member* "}"
 
 attributes_block: "attributes" target_type "{" attr_member* "}"
 
+// ─── Theorem / Axiom ─────────────────────────────────────
+// theorem_sig allows optional constrained type params: theorem foo[A: Group](a: A) { ... }
 theorem_sig: LOWER_ID type_params? param_list?
 
-theorem_decl: ("theorem" | "axiom") theorem_sig? "{" expr "}" ("by" "{" proof "}")?
+theorem_decl: ("theorem" | "axiom") theorem_sig? "{" body "}" ("by" "{" body "}")?
 
+// ─── Define / Let ────────────────────────────────────────
 define_stmt: "define" LOWER_ID param_list? "->" type "{" expr "}"
 
-let_stmt: let_simple
-        | let_satisfy
+let_stmt: "let" let_bind (":" type)? "=" expr
+        | "let" let_bind (":" type)? "satisfy" "{" body "}" ("by" "{" body "}")?
 
-let_simple: "let" ID ":" type "=" expr
+let_bind: ID
+        | "(" param ("," param)* ")"
 
-let_satisfy: "let" ID ":" type "satisfy" "{" expr "}"
-
+// ─── Instance ────────────────────────────────────────────
 instance_decl: "instance" PASCAL_ID ":" PASCAL_ID ("{" attr_member* "}")?
 
-type_params: "[" ID ("," ID)* "]"
-type_param: ID
+// ─── Type Parameters (with optional constraints) ─────────
+type_params: "[" type_param_item ("," type_param_item)* "]"
+type_param_item: ID (":" PASCAL_ID)?
 
-
+// ─── Constructors / Fields / Members ─────────────────────
 constructor: LOWER_ID param_list?
 
 field_decl: LOWER_ID ":" type
@@ -60,40 +66,69 @@ typeclass_member: field_decl
                 | "op" LOWER_ID ":" sig_type
                 | LOWER_ID param_list? "{" expr "}"
 
-target_type: PASCAL_ID | type_param ":" PASCAL_ID
+target_type: PASCAL_ID | type_param_item ":" PASCAL_ID
 
 attr_member: let_stmt | define_stmt
 
 param_list: "(" param ("," param)* ")"
+          | "(" ")"
 
 param: LOWER_ID ":" type
 
 sig_type: "(" type "," type ")" "->" type
 
-type: type_atom ("." PASCAL_ID)?
+// ─── Types (with function arrows and dot access) ─────────
+type: type_term ("->" type)?
+type_term: type_atom ("." PASCAL_ID)?
+type_atom: PASCAL_ID type_args?
+         | "(" type ")"
 
-type_atom: PASCAL_ID type_params? | "(" type ")"
+type_args: "[" type ("," type)* "]"
 
-expr: atom (op atom)*
-atom: NUMBER
-    | "true" | "false"
-    | ID
-    | "(" expr ")"
-    | "if" expr "{" expr "}" "else" "{" expr "}"
-    | "match" expr "{" case* "}"
-    | "forall" "(" LOWER_ID ":" type ")" "{" expr "}"
-    | "exists" "(" LOWER_ID ":" type ")" "{" expr "}"
+// ─── Expressions ─────────────────────────────────────────
+// Restructured with postfix chains for dot access, calls, type args.
+expr: unary_expr (op unary_expr)*
 
-case: PASCAL_ID param_list? "{" expr "}"
+unary_expr: "not" unary_expr
+          | postfix_expr
 
-op: "+" | "-" | "*" | "/" | "%" | "and" | "or" | "implies" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "not"
+postfix_expr: primary postfix_op*
 
+postfix_op: "." ID
+          | "." NUMBER
+          | "(" ")"
+          | "(" expr ("," expr)* ")"
+          | "[" type ("," type)* "]"
+
+primary: NUMBER
+       | STRING
+       | "true" | "false"
+       | ID
+       | "(" expr ")"
+       | "-" primary
+       | "if" expr "{" body "}" ("else" "{" body "}")?
+       | "match" expr "{" case* "}"
+       | "forall" "(" param ("," param)* ")" "{" body "}"
+       | "exists" "(" param ("," param)* ")" "{" body "}"
+
+case: PASCAL_ID param_list? "{" body "}"
+
+op: "+" | "-" | "*" | "/" | "%" | "and" | "or" | "implies" | "=" | "!=" | "<" | "<=" | ">" | ">=" | ":"
+
+// ─── Body (statement sequence in proofs/theorem heads) ────
+body: body_step*
+
+body_step: let_stmt
+         | define_stmt
+         | expr
+
+// ─── Constraint ──────────────────────────────────────────
 constraint: expr
 
-proof: expr
-
+// ─── Terminals ───────────────────────────────────────────
 ID: /[a-zA-Z_][a-zA-Z0-9_]*/
 PASCAL_ID: /[A-Z][a-zA-Z0-9_]*/
 LOWER_ID: /[a-z_][a-z0-9_]*/
 NUMBER: /\d+/
+STRING: /\"[^\"]*\"/
 NL: /\n+/

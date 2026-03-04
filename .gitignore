@@ -215,3 +215,8 @@ acornlib/build/
 # Local checkout of the Acorn standard library (keep local, not committed)
 /acornlib/
 acorn_mcp.db.backup
+
+# project context
+project context.md
+
+scripts/test_lark_grammar.py

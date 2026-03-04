@@ -60,11 +60,13 @@ app.add_middleware(
 class TheoremCreate(BaseModel):
     name: str
     raw: str  # Complete theorem source with keyword, head, and proof
+    file_path: str | None = None
 
 
 class DefinitionCreate(BaseModel):
     name: str
     definition: str
+    file_path: str | None = None
 
 
 # WARNING: GHOST DATA RISK!
@@ -177,7 +179,8 @@ async def create_theorem(theorem: TheoremCreate):
     try:
         result = await add_theorem(
             theorem.name,
-            theorem.raw
+            theorem.raw,
+            file_path=theorem.file_path
         )
         return result
     except ValueError as e:
@@ -221,7 +224,8 @@ async def create_definition(definition: DefinitionCreate):
     try:
         result = await add_definition(
             definition.name,
-            definition.definition
+            definition.definition,
+            file_path=definition.file_path
         )
         return result
     except ValueError as e:

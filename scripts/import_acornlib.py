@@ -105,7 +105,8 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
                     name=item.name,
                     raw=raw_with_keyword,
                     file_path=str(item.location.file.relative_to(ROOT_DIR)),
-                    line_number=item.location.line
+                    line_number=item.location.line,
+                    persist_to_file=False
                 )
             elif item.kind in ('define', 'definition', 'structure', 'inductive', 'typeclass', 
                              'typeclass_method', 'typeclass_field', 
@@ -115,7 +116,8 @@ async def import_items(items: List[AcornItem], dry_run: bool) -> None:
                     definition=item.source,
                     kind=item.kind,
                     file_path=str(item.location.file.relative_to(ROOT_DIR)),
-                    line_number=item.location.line
+                    line_number=item.location.line,
+                    persist_to_file=False
                 )
             else:
                 # Fallback for anything else

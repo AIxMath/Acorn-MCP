@@ -38,6 +38,10 @@ async def list_tools() -> list[Tool]:
                     "raw": {
                         "type": "string",
                         "description": "Complete theorem source including 'theorem' keyword, head, and proof. Example: 'theorem foo(x: Nat) { x = x } by { reflexivity }'"
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Optional file path relative to acornlib/src (e.g., 'nat/nat_base.ac') to write the theorem to."
                     }
                 },
                 "required": ["name", "raw"]
@@ -92,6 +96,10 @@ async def list_tools() -> list[Tool]:
                     "definition": {
                         "type": "string",
                         "description": "The definition text"
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Optional file path relative to acornlib/src (e.g., 'nat/nat_base.ac') to write the definition to."
                     }
                 },
                 "required": ["name", "definition"]
@@ -165,7 +173,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name == "add_theorem":
             result = await add_theorem(
                 arguments["name"],
-                arguments["raw"]
+                arguments["raw"],
+                file_path=arguments.get("file_path")
             )
             return [TextContent(
                 type="text",
@@ -202,7 +211,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "add_definition":
             result = await add_definition(
                 arguments["name"],
-                arguments["definition"]
+                arguments["definition"],
+                file_path=arguments.get("file_path")
             )
             return [TextContent(
                 type="text",
